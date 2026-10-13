@@ -1,0 +1,468 @@
+{
+  "format_version": 1,
+  "upstream_repository": "https://github.com/cwchenwang/physctrl",
+  "upstream_commit": "803264f2901e9f14481ab366991976b517571178",
+  "scope": "PAVG additions and replacement edits; unchanged upstream source is external",
+  "files": {
+    "libs/das/infer.py": {
+      "base_sha256": "0fb0a7b91290625e97764b1dcc472e3497150d5eca636e0d4aa8b6bdf1e42440",
+      "result_sha256": "1e277cfccec9d575ca1fd40cee49e1ca500e90889de442cd9732a96480b3e526",
+      "edits": [
+        {
+          "start": 9,
+          "end": 10,
+          "replacement": "try:\n    from moviepy.editor import VideoFileClip\nexcept ImportError:\n    VideoFileClip = None\n"
+        },
+        {
+          "start": 12,
+          "end": 13,
+          "replacement": "from .models.pipelines import (\n    CameraMotionGenerator,\n    DiffusionAsShaderPipeline,\n    ObjectMotionGenerator,\n)\n\n\ndef _load_video_with_opencv(media_path):\n    \"\"\"Load video frames without requiring diffusers' imageio backend.\"\"\"\n    import cv2\n\n    capture = cv2.VideoCapture(media_path)\n    if not capture.isOpened():\n        raise RuntimeError(f\"Could not open video: {media_path}\")\n    fps = float(capture.get(cv2.CAP_PROP_FPS))\n    frames = []\n    while True:\n        ok, frame = capture.read()\n        if not ok:\n            break\n        frames.append(Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))\n    capture.release()\n    if not frames:\n        raise RuntimeError(f\"Could not decode video frames: {media_path}\")\n    return frames, fps if fps > 0 else 8.0\n\n"
+        },
+        {
+          "start": 36,
+          "end": 38,
+          "replacement": "        try:\n            frames = load_video(media_path)\n        except ImportError:\n            frames, fps = _load_video_with_opencv(media_path)\n        else:\n            if VideoFileClip is not None:\n                fps = len(frames) / VideoFileClip(media_path).duration\n            else:\n                import cv2\n\n                capture = cv2.VideoCapture(media_path)\n                fps = float(capture.get(cv2.CAP_PROP_FPS))\n                capture.release()\n                if fps <= 0:\n                    fps = 8.0\n"
+        },
+        {
+          "start": 59,
+          "end": 60,
+          "replacement": "    tracking_tensor, _, _ = load_media(tracking_path)\n"
+        }
+      ]
+    },
+    "libs/das/models/cogvideox_tracking.py": {
+      "base_sha256": "9bfc1e78606bdedad56da265efbf0cd7acd60497c9e5fda4f87f943dcbbf7f73",
+      "result_sha256": "9bfc1e78606bdedad56da265efbf0cd7acd60497c9e5fda4f87f943dcbbf7f73",
+      "edits": []
+    },
+    "libs/das/models/pipelines.py": {
+      "base_sha256": "d25478908c41ebdcb7333027397600df49859c19e017c39c08d0854ec92ee018",
+      "result_sha256": "5916c1fde96b1c77d15e2c39bbe06d8d81a6650110b44906bc663acab372e1b0",
+      "edits": [
+        {
+          "start": 21,
+          "end": 22,
+          "replacement": "try:\n    from models.cogvideox_tracking import CogVideoXImageToVideoPipelineTracking\nexcept ImportError:\n    from .cogvideox_tracking import CogVideoXImageToVideoPipelineTracking\n"
+        },
+        {
+          "start": 24,
+          "end": 26,
+          "replacement": "try:\n    from image_gen_aux import DepthPreprocessor\nexcept ImportError:\n    DepthPreprocessor = None\n\ntry:\n    from moviepy.editor import ImageSequenceClip\nexcept ImportError:\n    ImageSequenceClip = None\n"
+        },
+        {
+          "start": 29,
+          "end": 30,
+          "replacement": "    def __init__(self, gpu_id=0, output_dir='outputs', cpu_offload=False):\n"
+        },
+        {
+          "start": 46,
+          "end": 46,
+          "replacement": "        self.gpu_id = gpu_id\n        self.cpu_offload = cpu_offload\n"
+        },
+        {
+          "start": 90,
+          "end": 91,
+          "replacement": "        pipe = CogVideoXImageToVideoPipelineTracking.from_pretrained(\n            model_path,\n            torch_dtype=dtype,\n            low_cpu_mem_usage=True,\n        )\n"
+        },
+        {
+          "start": 113,
+          "end": 115,
+          "replacement": "        if self.cpu_offload:\n            pipe.enable_sequential_cpu_offload(gpu_id=self.gpu_id)\n        else:\n            pipe.to(self.device, dtype=dtype)\n"
+        },
+        {
+          "start": 118,
+          "end": 118,
+          "replacement": "        if self.cpu_offload and hasattr(pipe, \"enable_attention_slicing\"):\n            pipe.enable_attention_slicing(\"max\")\n"
+        },
+        {
+          "start": 230,
+          "end": 230,
+          "replacement": "        if DepthPreprocessor is None:\n            raise ImportError(\n                \"image_gen_aux is required for depth preprocessing, but not for \"\n                \"precomputed tracking-video inference\"\n            )\n"
+        },
+        {
+          "start": 433,
+          "end": 433,
+          "replacement": "                if ImageSequenceClip is None:\n                    raise ImportError(\"moviepy is required to save generated tracking videos\")\n"
+        }
+      ]
+    },
+    "src/dataset/traj_dataset.py": {
+      "base_sha256": "9708b5242c238ca667390ad4ec95afb207c0333edd31ad595c4c17690f994302",
+      "result_sha256": "a1d3fd48b6d06c09cd36bcf55f72c078e804d4b5c13b105ac662139e81e55cdc",
+      "edits": [
+        {
+          "start": 5,
+          "end": 6,
+          "replacement": ""
+        },
+        {
+          "start": 8,
+          "end": 8,
+          "replacement": "\n\ndef _integrate_frame_velocities(velocities, future_indices, dt):\n    velocities = np.asarray(velocities, dtype=np.float32)\n    result = []\n    previous = 0\n    for current in future_indices:\n        result.append(\n            velocities[previous:current].sum(axis=0) * np.float32(dt)\n        )\n        previous = int(current)\n    return np.stack(result, axis=0).astype(np.float32)\n\n\ndef _interval_alive_mask(alive, future_indices):\n    alive = np.asarray(alive, dtype=bool)\n    result = []\n    previous = 0\n    for current in future_indices:\n        result.append(alive[previous : current + 1].all(axis=0))\n        previous = int(current)\n    return np.stack(result, axis=0)\n\n"
+        },
+        {
+          "start": 33,
+          "end": 33,
+          "replacement": "            if cfg.get('explicit_split_manifest', False):\n                raise FileNotFoundError(\n                    f\"Explicit split manifest is missing: {cfg.dataset_list}\"\n                )\n"
+        },
+        {
+          "start": 34,
+          "end": 36,
+          "replacement": "        # Preserve legacy split membership; explicit manifests are canonical.\n        if not cfg.get('explicit_split_manifest', False):\n            random.Random(0).shuffle(self.split_lst)\n"
+        },
+        {
+          "start": 40,
+          "end": 40,
+          "replacement": "        elif cfg.get('explicit_split_manifest', False):\n            print('Using explicit split manifest:', cfg.dataset_list)\n        elif split == 'test':\n            print('Test split:', self.split_lst)\n"
+        },
+        {
+          "start": 144,
+          "end": 147,
+          "replacement": "        with h5py.File(os.path.join(self.dataset_path, f'{model_name}'), 'r') as handle:\n            model_pcls = torch.from_numpy(np.array(handle['x']))\n"
+        },
+        {
+          "start": 168,
+          "end": 169,
+          "replacement": "        # Materialize datasets before leaving the context. Keeping one HDF5\n        # handle alive per sample can exhaust descriptors in long runs.\n        with h5py.File(os.path.join(self.dataset_path, f'{model_name}'), 'r') as handle:\n            model_metas = {\n                key: np.asarray(value)\n                for key, value in handle.items()\n                if isinstance(value, h5py.Dataset)\n            }\n"
+        },
+        {
+          "start": 170,
+          "end": 170,
+          "replacement": "        material_type = (\n            int(np.asarray(model_metas['mat_type']).item())\n            if 'mat_type' in model_metas\n            else 0\n        )\n        is_gas = material_type == 4\n        future_indices = np.arange(\n            1,\n            self.n_training_frames * self.n_frames_interval + 1,\n            self.n_frames_interval,\n            dtype=np.int64,\n        )\n        init_vel = (\n            torch.from_numpy(np.array(model_metas['v'][0])).float()\n            if 'v' in model_metas\n            else torch.zeros_like(model_pcls[0]).float()\n        )\n        gas_advection_displacement = np.zeros(\n            (self.n_training_frames, model_pcls.shape[1], 3), dtype=np.float32\n        )\n        gas_advection_alive = np.zeros(\n            (self.n_training_frames, model_pcls.shape[1]), dtype=bool\n        )\n        if is_gas and 'v' in model_metas:\n            raw_velocity = np.asarray(model_metas['v'], dtype=np.float32)\n            alive = np.asarray(\n                model_metas.get(\n                    'alive_mask',\n                    np.ones(raw_velocity.shape[:2], dtype=np.uint8),\n                )\n            ).astype(bool)\n            frame_dt = float(self.cfg.get('frame_dt', 0.05))\n            # Point positions are normalized by (x - norm_fac) / 2.\n            gas_advection_displacement = _integrate_frame_velocities(\n                raw_velocity, future_indices, frame_dt\n            ) / np.float32(2.0)\n            gas_advection_alive = _interval_alive_mask(alive, future_indices)\n"
+        },
+        {
+          "start": 177,
+          "end": 178,
+          "replacement": "        points_tgt = model_pcls[future_indices]\n"
+        },
+        {
+          "start": 193,
+          "end": 193,
+          "replacement": "        model_data['init_vel'] = init_vel\n        model_data['gas_advection_displacement'] = torch.from_numpy(\n            gas_advection_displacement\n        ).float()\n        model_data['gas_advection_alive'] = torch.from_numpy(\n            gas_advection_alive\n        ).bool()\n"
+        },
+        {
+          "start": 195,
+          "end": 195,
+          "replacement": "        model_data['physics_volume'] = model_data['vol'].float().unsqueeze(-1)\n"
+        },
+        {
+          "start": 225,
+          "end": 225,
+          "replacement": "        elif is_gas:\n            # Gas drag_force stores the Mantaflow velocity condition directly. The\n            # MPM normalization below would incorrectly divide it by about 9800.\n            gas_force = torch.from_numpy(np.array(model_metas['drag_force'])).float()\n            gas_force = gas_force.unsqueeze(0) if gas_force.ndim == 1 else gas_force\n            model_data['force'] = gas_force\n            model_data['base_drag_coeff'] = torch.ones(gas_force.shape[0], 1)\n"
+        },
+        {
+          "start": 244,
+          "end": 244,
+          "replacement": "        # Gas has PhysCtrl-compatible F/C fields, but it is not an MPM\n        # deformation sample and must not enter the solid deformation loss.\n"
+        },
+        {
+          "start": 247,
+          "end": 248,
+          "replacement": "            material_type = int(np.asarray(model_data['mat_type']).item())\n            if material_type in (3, 4): # Rigid or gas dataset\n"
+        },
+        {
+          "start": 275,
+          "end": 275,
+          "replacement": "            model_data['init_vel'] = model_data['init_vel'][ind]\n            model_data['physics_volume'] = model_data['physics_volume'][ind]\n            model_data['gas_advection_displacement'] = model_data[\n                'gas_advection_displacement'\n            ][:, ind]\n            model_data['gas_advection_alive'] = model_data[\n                'gas_advection_alive'\n            ][:, ind]\n"
+        },
+        {
+          "start": 285,
+          "end": 286,
+          "replacement": "        return model_data, model_info\n"
+        }
+      ]
+    },
+    "src/model/dit.py": {
+      "base_sha256": "a9dffb44784bbf7ac9d926b23ae6af97b249b75c9168c5911103a066ab8220a9",
+      "result_sha256": "9e2dd47961c9f62fc761513fa19f0b501c083c13b0ccb8bbb27b2278c4fcc5f2",
+      "edits": [
+        {
+          "start": 22,
+          "end": 23,
+          "replacement": ""
+        },
+        {
+          "start": 597,
+          "end": 598,
+          "replacement": "        return output\n"
+        }
+      ]
+    },
+    "src/model/spacetime.py": {
+      "base_sha256": "ea5dd8aee30a7534bf8f906eff409b0ffd64f125923e348148c42f2bc3e71156",
+      "result_sha256": "b2b70466ad3eb1ffdfa7bc84362e7762e3f2ede8436396d2a88b9775b496e9d0",
+      "edits": [
+        {
+          "start": 1000,
+          "end": 1001,
+          "replacement": "        self.dit._set_gradient_checkpointing(self.dit, value=True)\n"
+        },
+        {
+          "start": 1071,
+          "end": 1071,
+          "replacement": "\nclass MDM_CondBase(nn.Module):\n    \"\"\"Generic force-conditioned MDM baseline without PhysCtrl extensions.\n\n    The baseline keeps the point-cloud and initial-frame conditioning used by\n    MDM, while representing all task conditions with one ordinary token.  It\n    intentionally does not use material, gravity, spatial-attention, or\n    physics-loss modules from the proposed model.\n    \"\"\"\n\n    def __init__(self, n_points, n_frame, n_feats, model_config):\n        super().__init__()\n        self.n_points = n_points\n        self.n_feats = n_feats\n        self.latent_dim = int(model_config.latent_dim)\n        self.frame_cond = bool(model_config.get(\"frame_cond\", True))\n        self.cond_frame = 1 if self.frame_cond else 0\n        self.pred_offset = bool(model_config.get(\"pred_offset\", True))\n        self.max_num_forces = int(model_config.get(\"max_num_forces\", 1))\n\n        if model_config.get(\"point_embed\", True):\n            self.input_encoder = PointEmbed(dim=self.latent_dim)\n        else:\n            self.input_encoder = nn.Linear(n_feats, self.latent_dim)\n\n        self.condition_encoder = nn.Sequential(\n            nn.Linear(self.max_num_forces * 6, self.latent_dim),\n            nn.SiLU(),\n            nn.Linear(self.latent_dim, self.latent_dim),\n        )\n\n        self.dit = SpaitalTemporalTransformer(\n            sample_points=n_points,\n            sample_frames=n_frame + self.cond_frame,\n            in_channels=n_feats,\n            num_layers=int(model_config.get(\"n_layers\", 8)),\n            num_attention_heads=self.latent_dim // 64,\n            time_embed_dim=self.latent_dim,\n            cond_seq_length=1,\n            cond_seq_length_t=1,\n            transformer_block=\"TemporalOnlyTransformerBlock\",\n            num_classes=0,\n            class_dropout_prob=0.0,\n        )\n\n    def _pack_condition(self, value, batch_size, device, dtype):\n        if value is None:\n            return torch.zeros(\n                batch_size, self.max_num_forces, 3, device=device, dtype=dtype\n            )\n        if value.ndim == 2:\n            value = value.unsqueeze(1)\n        value = value[..., :3].to(device=device, dtype=dtype)\n        if value.shape[1] < self.max_num_forces:\n            pad = torch.zeros(\n                batch_size,\n                self.max_num_forces - value.shape[1],\n                3,\n                device=device,\n                dtype=dtype,\n            )\n            value = torch.cat([value, pad], dim=1)\n        return value[:, : self.max_num_forces]\n\n    def enable_gradient_checkpointing(self):\n        self.dit._set_gradient_checkpointing(self.dit, value=True)\n\n    def forward(\n        self,\n        x,\n        timesteps,\n        init_pc,\n        force,\n        E=None,\n        nu=None,\n        drag_mask=None,\n        drag_point=None,\n        floor_height=None,\n        gravity_label=None,\n        coeff=None,\n        y=None,\n        null_emb=None,\n    ):\n        del E, nu, drag_mask, floor_height, gravity_label, coeff, y\n\n        batch_size, n_frame, n_points, n_feats = x.shape\n        init_pc = init_pc.reshape(batch_size, n_points, n_feats)\n        force = self._pack_condition(force, batch_size, x.device, x.dtype)\n        drag_point = self._pack_condition(\n            drag_point, batch_size, x.device, x.dtype\n        )\n        condition = torch.cat([force, drag_point], dim=-1).reshape(batch_size, -1)\n        encoder_hidden_states = self.condition_encoder(condition).unsqueeze(1)\n\n        if null_emb is not None:\n            null_mask = null_emb.reshape(batch_size, -1)[:, :1].unsqueeze(-1)\n            encoder_hidden_states = encoder_hidden_states * null_mask\n\n        if self.frame_cond:\n            x = torch.cat([init_pc.unsqueeze(1), x], dim=1)\n\n        hidden_states = self.input_encoder(\n            x.reshape(-1, n_points, n_feats)\n        ).reshape(batch_size, -1, n_points, self.latent_dim)\n        output = self.dit(\n            hidden_states,\n            encoder_hidden_states,\n            timesteps,\n        ).reshape(batch_size, -1, n_points, 3)[:, self.cond_frame :]\n\n        if self.pred_offset:\n            output = output + init_pc.unsqueeze(1)\n        return output\n\n"
+        },
+        {
+          "start": 1112,
+          "end": 1113,
+          "replacement": "    print(\"Average time: \", t_total / 90)\n"
+        }
+      ]
+    },
+    "src/options.py": {
+      "base_sha256": "9c80ba4ad6991ded0abf57d26035cb3771d21b12a94ab47f9ecdeb897eb4fb4c",
+      "result_sha256": "773dd05c1d0fbea3e4b6aa40234fe62daecf3d5619d2335acb9be88843c6570b",
+      "edits": [
+        {
+          "start": 73,
+          "end": 73,
+          "replacement": "    lambda_floor: float = 0.0\n    lambda_gas_advection: float = 0.0\n    gas_advection_scale_min: float = 1.0e-4\n    lambda_gas_divergence: float = 0.0\n    gas_divergence_max_centers: int = 256\n    gas_divergence_num_neighbors: int = 8\n    gas_divergence_regularization: float = 1.0e-3\n    gas_divergence_scale_min: float = 1.0\n    gas_divergence_huber_beta: float = 1.0\n    gas_divergence_residual_clip: float = 20.0\n    loss_eval_steps: int = 500\n    loss_eval_max_batches: int = 8\n    val_dataset_list: Optional[str] = None\n    test_dataset_list: Optional[str] = None\n    evaluate_test_during_training: bool = True\n    gen_eval_steps: int = 2500\n    gen_eval_max_batches: int = 1\n    gen_eval_num_inference_steps: int = 25\n    gen_eval_voxel_size: float = 0.1\n    gen_eval_num_gifs: int = 0\n    protocol_lock_path: Optional[str] = None\n    protocol_manifest_keys: Optional[Dict[str, str]] = None\n    phase_balanced: Optional[Dict] = None\n"
+        },
+        {
+          "start": 86,
+          "end": 87,
+          "replacement": "    num_inference_steps: int\n"
+        }
+      ]
+    },
+    "src/pipeline_traj.py": {
+      "base_sha256": "070dc0442ad5a64e16c82a36244c7709da01660500336fe1c02a59f26025d34b",
+      "result_sha256": "8a6184355ccbbe34dfdfe16b3be6f09c563595dc265e793913b004f69656cc68",
+      "edits": [
+        {
+          "start": 14,
+          "end": 14,
+          "replacement": "        init_vel = None,\n        physics_volume = None,\n"
+        },
+        {
+          "start": 32,
+          "end": 32,
+          "replacement": "        init_vel = init_vel.to(device) if init_vel is not None else None\n        physics_volume = physics_volume.to(device) if physics_volume is not None else None\n"
+        },
+        {
+          "start": 44,
+          "end": 44,
+          "replacement": "            gravity = torch.cat([gravity] * 2) if gravity is not None else None\n            coeff = torch.cat([coeff] * 2)\n            y = torch.cat([y] * 2) if y is not None else None\n            init_vel = torch.cat([init_vel] * 2) if init_vel is not None else None\n            physics_volume = torch.cat([physics_volume] * 2) if physics_volume is not None else None\n"
+        },
+        {
+          "start": 51,
+          "end": 52,
+          "replacement": "            model_kwargs = {}\n            if getattr(self.model, 'physics_condition_enabled', False):\n                model_kwargs = {\n                    'init_vel': init_vel,\n                    'physics_volume': physics_volume,\n                }\n            model_output = self.model(sample_input, t, init_pc, force, E, nu, mask, drag_point, floor_height=floor_height, gravity_label=gravity, coeff=coeff, y=y, null_emb=null_emb, **model_kwargs)\n"
+        },
+        {
+          "start": 59,
+          "end": 60,
+          "replacement": "        return sample\n"
+        }
+      ]
+    },
+    "src/train.py": {
+      "base_sha256": "dea34c1f76278da722d4a43478f62adb1a4b0bc776971eb1fbe0a5c85866b6f2",
+      "result_sha256": "d8282124691e8bee35a93e1b4a4489468e27010c9be7be514ccfed234dc2ad52",
+      "edits": [
+        {
+          "start": 1,
+          "end": 1,
+          "replacement": "import hashlib\n"
+        },
+        {
+          "start": 21,
+          "end": 22,
+          "replacement": "from accelerate.utils import DataLoaderConfiguration, ProjectConfiguration, set_seed\n"
+        },
+        {
+          "start": 45,
+          "end": 45,
+          "replacement": "from dataset.phase_balanced import (\n    PhaseBalancedBatchSampler, PhaseBalancedDataset,\n    RecoveryBatchSampler, ValidatedRecoveryDataset,\n)\n"
+        },
+        {
+          "start": 48,
+          "end": 49,
+          "replacement": "from utils.physics import DeformLoss, solid_mpm_mask\n"
+        },
+        {
+          "start": 51,
+          "end": 51,
+          "replacement": "\n\ndef compute_gas_advection_loss(pred_sample, batch, scale_min=1.0e-4):\n    required = ('points_src', 'gas_advection_displacement', 'gas_advection_alive')\n    missing = [key for key in required if key not in batch]\n    if missing:\n        raise KeyError(\n            'Gas advection loss requires dataset fields: ' + ', '.join(missing)\n        )\n    previous_position = torch.cat(\n        [batch['points_src'].float(), pred_sample[:, :-1].float()], dim=1\n    )\n    predicted_displacement = pred_sample.float() - previous_position\n    target_displacement = batch['gas_advection_displacement'].float()\n    valid = batch['gas_advection_alive'].bool()\n    if 'mat_type' in batch:\n        gas_sample = batch['mat_type'].reshape(-1).eq(4)\n        valid = valid & gas_sample[:, None, None]\n    if not valid.any():\n        return pred_sample.sum() * 0.0\n    scale = target_displacement[valid].square().mean().sqrt().detach()\n    scale = scale.clamp_min(float(scale_min))\n    error = ((predicted_displacement - target_displacement) / scale).square()\n    return error.mean(dim=-1)[valid].mean()\n\n\ndef compute_gas_divergence_loss(\n    pred_sample,\n    batch,\n    max_centers=256,\n    num_neighbors=8,\n    regularization=1.0e-3,\n    scale_min=1.0,\n    huber_beta=1.0,\n    residual_clip=20.0,\n):\n    \"\"\"Match the point-cloud divergence induced by the MantaFlow trajectory.\n\n    The H5 files do not contain MantaFlow's Eulerian ``U`` grid. We use the\n    same local least-squares operator on predicted and simulated tracer\n    displacements. This is a differentiable kinematic proxy for the pressure\n    projection in Eq. (1), while avoiding a fabricated grid-level label.\n    \"\"\"\n    required = (\"points_src\", \"gas_advection_displacement\", \"gas_advection_alive\")\n    missing = [key for key in required if key not in batch]\n    if missing:\n        raise KeyError(\n            \"Gas divergence loss requires dataset fields: \" + \", \".join(missing)\n        )\n\n    source = batch[\"points_src\"].float()\n    if source.ndim == 4:\n        source = source[:, 0]\n    if source.ndim != 3:\n        raise ValueError(f\"Expected points_src [B,N,3], got {tuple(source.shape)}\")\n\n    target_displacement = batch[\"gas_advection_displacement\"].float()\n    alive = batch[\"gas_advection_alive\"].bool()\n    if \"mat_type\" in batch:\n        gas_sample = batch[\"mat_type\"].reshape(-1).eq(4)\n        alive = alive & gas_sample[:, None, None]\n    if not alive.any():\n        return pred_sample.sum() * 0.0\n\n    batch_size, num_points, _ = source.shape\n    frame_count = pred_sample.shape[1]\n    if target_displacement.shape[1] != frame_count:\n        raise ValueError(\n            \"Gas divergence target and prediction frame counts differ: \"\n            f\"{target_displacement.shape[1]} vs {frame_count}\"\n        )\n    if num_points < 2:\n        return pred_sample.sum() * 0.0\n\n    center_count = min(int(max_centers), num_points)\n    neighbor_count = min(int(num_neighbors), num_points - 1)\n    if center_count < 1 or neighbor_count < 3:\n        return pred_sample.sum() * 0.0\n\n    center_idx = torch.linspace(\n        0, num_points - 1, center_count, device=source.device\n    ).round().long()\n\n    # The graph depends only on the input cloud, so neighbor selection is kept\n    # outside autograd. The Jacobian below remains fully differentiable.\n    with torch.no_grad():\n        distances = torch.cdist(source[:, center_idx], source)\n        self_idx = center_idx.reshape(1, -1, 1).expand(batch_size, -1, 1)\n        distances.scatter_(2, self_idx, float(\"inf\"))\n        neighbor_idx = distances.topk(\n            neighbor_count, dim=2, largest=False, sorted=False\n        ).indices\n\n    def estimate_divergence(positions):\n        positions = positions.float()\n        displacements = positions[:, 1:] - positions[:, :-1]\n        time_count = displacements.shape[1]\n        time_neighbor_idx = neighbor_idx[:, None].expand(\n            batch_size, time_count, center_count, neighbor_count\n        )\n\n        def gather_neighbors(values):\n            values = values.unsqueeze(2).expand(\n                -1, -1, center_count, -1, -1\n            )\n            index = time_neighbor_idx.unsqueeze(-1).expand(\n                -1, -1, -1, -1, 3\n            )\n            return values.gather(3, index)\n\n        current_positions = positions[:, :-1]\n        center_positions = current_positions.index_select(2, center_idx)\n        neighbor_positions = gather_neighbors(current_positions)\n        center_displacements = displacements.index_select(2, center_idx)\n        neighbor_displacements = gather_neighbors(displacements)\n\n        delta_x = neighbor_positions - center_positions.unsqueeze(3)\n        delta_u = neighbor_displacements - center_displacements.unsqueeze(3)\n        interval_alive = alive[:, :time_count]\n        center_alive = interval_alive.index_select(2, center_idx)\n        neighbor_alive = interval_alive.unsqueeze(2).expand(\n            -1, -1, center_count, -1\n        ).gather(3, time_neighbor_idx)\n        edge_valid = neighbor_alive & center_alive.unsqueeze(-1)\n        delta_x = delta_x * edge_valid.unsqueeze(-1).float()\n        delta_u = delta_u * edge_valid.unsqueeze(-1).float()\n\n        normal = torch.einsum(\"btmki,btmkj->btmij\", delta_x, delta_x)\n        rhs = torch.einsum(\"btmki,btmkj->btmij\", delta_x, delta_u)\n        eye = torch.eye(3, device=normal.device, dtype=normal.dtype)\n        normal = normal + float(regularization) * eye.reshape(1, 1, 1, 3, 3)\n        jacobian = torch.linalg.solve(normal, rhs)\n        divergence = torch.diagonal(jacobian, dim1=-2, dim2=-1).sum(dim=-1)\n        valid_centers = center_alive & (edge_valid.sum(dim=-1) >= 3)\n        return divergence, valid_centers\n\n    predicted_positions = torch.cat([source.unsqueeze(1), pred_sample.float()], dim=1)\n    if \"points_tgt\" in batch:\n        target_positions = torch.cat(\n            [source.unsqueeze(1), batch[\"points_tgt\"].float()], dim=1\n        )\n    else:\n        target_positions = torch.cat(\n            [\n                source.unsqueeze(1),\n                source.unsqueeze(1)\n                + target_displacement.float().cumsum(dim=1),\n            ],\n            dim=1,\n        )\n\n    predicted_divergence, valid_centers = estimate_divergence(predicted_positions)\n    with torch.no_grad():\n        target_divergence, target_valid_centers = estimate_divergence(target_positions)\n    valid_centers = valid_centers & target_valid_centers\n    if not valid_centers.any():\n        return pred_sample.sum() * 0.0\n\n    scale = target_divergence[valid_centers].square().mean().sqrt().detach()\n    scale = scale.clamp_min(float(scale_min))\n    residual = (predicted_divergence - target_divergence.detach()) / scale\n    residual = residual.clamp(-float(residual_clip), float(residual_clip))\n    per_center = F.smooth_l1_loss(\n        residual,\n        torch.zeros_like(residual),\n        beta=float(huber_beta),\n        reduction=\"none\",\n    )\n    weights = valid_centers.float()\n    return (per_center * weights).sum() / weights.sum().clamp_min(1.0)\n\n\ndef _sha256_file(path: Path) -> str:\n    digest = hashlib.sha256()\n    with path.open(\"rb\") as handle:\n        for chunk in iter(lambda: handle.read(1024 * 1024), b\"\"):\n            digest.update(chunk)\n    return digest.hexdigest()\n\n\ndef validate_protocol_manifests(args):\n    lock_value = args.get(\"protocol_lock_path\")\n    if not lock_value:\n        return []\n\n    lock_path = Path(str(lock_value))\n    if not lock_path.is_file():\n        raise FileNotFoundError(f\"Missing protocol lock: {lock_path}\")\n    lock = json.loads(lock_path.read_text(encoding=\"utf-8\"))\n    if not lock.get(\"immutable\", False):\n        raise ValueError(f\"Protocol lock is not immutable: {lock_path}\")\n\n    manifest_keys = args.get(\"protocol_manifest_keys\")\n    if not manifest_keys:\n        raise ValueError(\"protocol_manifest_keys is required with protocol_lock_path\")\n\n    report = []\n    for config_key, lock_key in manifest_keys.items():\n        manifest_value = OmegaConf.select(args, str(config_key))\n        if not manifest_value:\n            raise KeyError(f\"Missing configured manifest path: {config_key}\")\n        manifest_path = Path(str(manifest_value))\n        if not manifest_path.is_file():\n            raise FileNotFoundError(f\"Missing manifest for {config_key}: {manifest_path}\")\n        expected = lock.get(\"files\", {}).get(str(lock_key))\n        if expected is None:\n            raise KeyError(f\"Protocol lock has no entry for {lock_key}\")\n\n        payload = json.loads(manifest_path.read_text(encoding=\"utf-8\"))\n        if not isinstance(payload, list):\n            raise TypeError(f\"Manifest must be a JSON list: {manifest_path}\")\n        actual_sha256 = _sha256_file(manifest_path)\n        actual_count = len(payload)\n        if actual_count != int(expected[\"count\"]):\n            raise ValueError(\n                f\"Manifest count mismatch for {manifest_path}: \"\n                f\"expected={expected['count']} actual={actual_count}\"\n            )\n        if actual_sha256 != str(expected[\"sha256\"]):\n            raise ValueError(\n                f\"Manifest SHA256 mismatch for {manifest_path}: \"\n                f\"expected={expected['sha256']} actual={actual_sha256}\"\n            )\n        report.append(\n            {\n                \"config_key\": str(config_key),\n                \"lock_key\": str(lock_key),\n                \"path\": str(manifest_path),\n                \"count\": actual_count,\n                \"sha256\": actual_sha256,\n            }\n        )\n    return report\n\n\ndef points_to_voxel_grid(points, voxel_size, grid_min, grid_max):\n    grid_size = ((grid_max - grid_min) / voxel_size).round().long()\n    grid = torch.zeros(tuple(grid_size.tolist()), dtype=torch.bool, device=points.device)\n    valid = (points >= grid_min).all(dim=1) & (points < grid_max).all(dim=1)\n    valid_points = points[valid]\n    if valid_points.numel() == 0:\n        return grid\n    voxel_indices = ((valid_points - grid_min) / voxel_size).floor().long()\n    grid[voxel_indices[:, 0], voxel_indices[:, 1], voxel_indices[:, 2]] = True\n    return grid\n\ndef sequence_iou_cd_mse(pred, target, voxel_size=0.1):\n    grid_min = torch.tensor([-1.5, -1.5, -1.5], device=pred.device, dtype=pred.dtype)\n    grid_max = torch.tensor([1.5, 1.5, 1.5], device=pred.device, dtype=pred.dtype)\n    ious = []\n    cds = []\n    for t in range(pred.shape[0]):\n        pairwise = torch.cdist(pred[t].float(), target[t].float(), p=2) ** 2\n        cds.append(pairwise.min(dim=1)[0].mean() + pairwise.min(dim=0)[0].mean())\n        grid_pred = points_to_voxel_grid(pred[t].reshape(-1, 3).float(), voxel_size, grid_min.float(), grid_max.float())\n        grid_gt = points_to_voxel_grid(target[t].reshape(-1, 3).float(), voxel_size, grid_min.float(), grid_max.float())\n        union = (grid_pred | grid_gt).sum().float()\n        inter = (grid_pred & grid_gt).sum().float()\n        ious.append(inter / union if union > 0 else torch.tensor(0.0, device=pred.device))\n    return torch.stack(ious).mean(), torch.stack(cds).mean(), F.mse_loss(pred.float(), target.float())\n\ndef evaluate_generation_metrics(model, dataloader, args, noise_scheduler, loss_deform, accelerator, prefix, max_batches, global_step):\n    model.eval()\n    pipeline = TrajPipeline(model=accelerator.unwrap_model(model), scheduler=DDIMScheduler.from_config(noise_scheduler.config))\n    totals = {}\n    count = 0\n    gif_samples = []\n    with torch.no_grad():\n        for i, (batch, _) in enumerate(dataloader):\n            if max_batches and i >= max_batches:\n                break\n            with torch.autocast('cuda', dtype=torch.bfloat16):\n                output = pipeline(batch['points_src'], batch['force'], batch['E'], batch['nu'], batch['mask'][..., :1], batch['drag_point'], batch['floor_height'], batch['gravity'], batch['base_drag_coeff'], y=None if 'mat_type' not in batch else batch['mat_type'], init_vel=batch.get('init_vel'), physics_volume=batch.get('physics_volume'), device=accelerator.device, batch_size=args.eval_batch_size, generator=torch.Generator().manual_seed(args.seed), n_frames=args.train_dataset.n_training_frames, num_inference_steps=args.gen_eval_num_inference_steps)\n            target = batch['points_tgt']\n            metrics = {}\n            metrics['xyz_mse'] = F.mse_loss(output.float(), target.float()).detach()\n            solid_mask = solid_mpm_mask(batch, output.shape[0], output.device)\n            if 'vol' in batch and args.lambda_deform > 0 and torch.any(solid_mask):\n                metrics['deform'] = loss_deform(\n                    x=output[solid_mask].clamp(min=-2.2, max=2.2),\n                    vol=batch['vol'][solid_mask],\n                    F=batch['F'][solid_mask],\n                    C=batch['C'][solid_mask],\n                    frame_interval=2,\n                    norm_fac=args.train_dataset.norm_fac,\n                ).detach()\n                metrics['gt_deform'] = loss_deform(\n                    x=target[solid_mask],\n                    vol=batch['vol'][solid_mask],\n                    F=batch['F'][solid_mask],\n                    C=batch['C'][solid_mask],\n                    frame_interval=2,\n                    norm_fac=args.train_dataset.norm_fac,\n                ).detach()\n            batch_iou, batch_cd, batch_mse = [], [], []\n            for j in range(output.shape[0]):\n                iou, cd, mse = sequence_iou_cd_mse(output[j], target[j], args.gen_eval_voxel_size)\n                batch_iou.append(iou)\n                batch_cd.append(cd)\n                batch_mse.append(mse)\n            metrics['iou'] = torch.stack(batch_iou).mean().detach()\n            metrics['chamfer'] = torch.stack(batch_cd).mean().detach()\n            metrics['mse'] = torch.stack(batch_mse).mean().detach()\n            source_center = batch['points_src'][:, 0].mean(dim=1)\n            pred_motion = output[:, -1].mean(dim=1) - source_center\n            target_motion = target[:, -1].mean(dim=1) - source_center\n            force_direction = batch['force'][:, 0]\n            metrics['direction_cosine'] = F.cosine_similarity(pred_motion.float(), force_direction.float(), dim=-1).mean().detach()\n            metrics['gt_direction_cosine'] = F.cosine_similarity(target_motion.float(), force_direction.float(), dim=-1).mean().detach()\n            for k, v in metrics.items():\n                totals[k] = totals.get(k, torch.tensor(0.0, device=accelerator.device)) + accelerator.gather(v.reshape(1)).mean()\n            if accelerator.is_main_process and len(gif_samples) < args.gen_eval_num_gifs:\n                for j in range(output.shape[0]):\n                    if len(gif_samples) >= args.gen_eval_num_gifs:\n                        break\n                    gif_samples.append({\n                        'model': str(batch['model'][j]),\n                        'prediction': output[j].float().cpu().numpy(),\n                        'target': target[j].float().cpu().numpy(),\n                        'mask': batch['mask'][j, 0, :, 0].cpu().numpy(),\n                    })\n            count += 1\n            torch.cuda.empty_cache()\n    denom = max(count, 1)\n    out = {f'{prefix}/{k}': (v / denom).item() for k, v in totals.items()}\n    accelerator.wait_for_everyone()\n    if accelerator.is_main_process and gif_samples:\n        gif_dir = os.path.join(args.output_dir, 'test_gifs', f'step-{global_step:06d}')\n        os.makedirs(gif_dir, exist_ok=True)\n        for index, sample in enumerate(gif_samples):\n            sample_name = Path(sample['model']).stem\n            save_pointcloud_video(\n                sample['prediction'],\n                sample['target'],\n                os.path.join(gif_dir, f'{index:02d}_{sample_name}_prediction_vs_simulation.gif'),\n                drag_mask=sample['mask'],\n                fps=12,\n                vis_flag='objaverse',\n            )\n        with open(os.path.join(gif_dir, 'metrics.json'), 'w', encoding='utf-8') as handle:\n            json.dump({'step': global_step, 'metrics': out, 'samples': [sample['model'] for sample in gif_samples]}, handle, indent=2)\n    accelerator.wait_for_everyone()\n    model.train()\n    return out\n\ndef compute_loss_batch(model, batch, args, noise_scheduler, loss_deform, generator, accelerator):\n    latents = batch['points_tgt']\n    noise = torch.randn_like(latents)\n    bsz = latents.shape[0]\n    timesteps = torch.randint(0, noise_scheduler.config.num_train_timesteps, (bsz,), device=latents.device).long()\n    noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)\n    if args.condition_drop_rate > 0:\n        random_p = torch.rand(bsz, device=latents.device, generator=generator)\n        null_emb = (random_p > args.condition_drop_rate).float()[..., None, None]\n    else:\n        null_emb = None\n    model_kwargs = {}\n    if args.model_type == 'dit_st_phase':\n        model_kwargs = {\n            'init_vel': batch['init_vel'],\n            'physics_volume': batch['physics_volume'],\n        }\n    pred_sample = model(noisy_latents, timesteps, batch['points_src'], batch['force'], batch['E'], batch['nu'], batch['mask'][..., :1], batch['drag_point'], batch['floor_height'], batch['gravity'], batch['base_drag_coeff'], y=None if 'mat_type' not in batch else batch['mat_type'], null_emb=null_emb, **model_kwargs)\n    metrics = {}\n    loss = F.mse_loss(pred_sample.float(), latents.float())\n    metrics['xyz'] = loss.detach()\n    if args.lambda_mask > 0:\n        loss_mask = F.mse_loss(pred_sample[batch['mask']], latents[batch['mask']])\n        loss = loss + loss_mask\n        metrics['mask'] = loss_mask.detach()\n    if args.lambda_vel > 0.:\n        target_vel = latents[:, 1:] - latents[:, :-1]\n        pred_vel = pred_sample[:, 1:] - pred_sample[:, :-1]\n        loss_vel = F.mse_loss(target_vel.float(), pred_vel.float())\n        loss = loss + loss_vel\n        metrics['loss_vel'] = loss_vel.detach()\n    if args.lambda_gas_advection > 0.:\n        loss_gas_advection = compute_gas_advection_loss(\n            pred_sample,\n            batch,\n            scale_min=args.gas_advection_scale_min,\n        )\n        loss = loss + args.lambda_gas_advection * loss_gas_advection\n        metrics['loss_gas_advection'] = loss_gas_advection.detach()\n    if args.lambda_gas_divergence > 0.:\n        loss_gas_divergence = compute_gas_divergence_loss(\n            pred_sample,\n            batch,\n            max_centers=args.gas_divergence_max_centers,\n            num_neighbors=args.gas_divergence_num_neighbors,\n            regularization=args.gas_divergence_regularization,\n            scale_min=args.gas_divergence_scale_min,\n            huber_beta=args.gas_divergence_huber_beta,\n            residual_clip=args.gas_divergence_residual_clip,\n        )\n        loss = loss + args.lambda_gas_divergence * loss_gas_divergence\n        metrics['loss_gas_divergence'] = loss_gas_divergence.detach()\n    if 'vol' in batch and args.lambda_momentum > 0.:\n        loss_p = loss_momentum(x=pred_sample, vol=batch['vol'], force=batch['weighted_force'], drag_pt_num=batch['mask'][:, 0, :].sum(dim=1), norm_fac=args.train_dataset.norm_fac)\n        loss = loss + args.lambda_momentum * loss_p\n        metrics['loss_p'] = loss_p.detach()\n    if 'vol' in batch and args.lambda_deform > 0.:\n        solid_mask = solid_mpm_mask(batch, pred_sample.shape[0], pred_sample.device)\n        if torch.any(solid_mask):\n            loss_F = loss_deform(\n                x=pred_sample[solid_mask].clamp(min=-2.2, max=2.2),\n                vol=batch['vol'][solid_mask],\n                F=batch['F'][solid_mask],\n                C=batch['C'][solid_mask],\n                frame_interval=2,\n                norm_fac=args.train_dataset.norm_fac,\n            )\n        else:\n            loss_F = pred_sample.new_zeros(())\n        loss = loss + args.lambda_deform * loss_F\n        metrics['loss_deform'] = loss_F.detach()\n    lambda_floor = float(args.get(\"lambda_floor\", 0.0))\n    if lambda_floor > 0.0:\n        floor_mask = torch.ones(bsz, dtype=torch.bool, device=latents.device)\n        if 'phase_id' in batch:\n            floor_mask &= batch['phase_id'].reshape(-1).eq(PhaseBalancedDataset.SOLID)\n        if 'mat_type' in batch:\n            floor_mask &= batch['mat_type'].reshape(-1).ne(4)\n        if torch.any(floor_mask):\n            floor_height = batch['floor_height'][floor_mask].reshape(-1, 1, 1)\n            sample_min_height = torch.amin(\n                latents[floor_mask, ..., 1], dim=(1, 2)\n            ).reshape(-1, 1, 1)\n            floor_height = torch.minimum(floor_height, sample_min_height)\n            loss_floor = (\n                torch.relu(floor_height - pred_sample[floor_mask, ..., 1]) ** 2\n            ).mean()\n        else:\n            loss_floor = pred_sample.new_zeros(())\n        loss = loss + lambda_floor * loss_floor\n        metrics['loss_floor'] = loss_floor.detach()\n    metrics['loss'] = loss.detach()\n    return loss, metrics\n\ndef evaluate_loss_only(model, dataloader, args, noise_scheduler, loss_deform, generator, accelerator, prefix, max_batches):\n    model.eval()\n    totals = {}\n    count = 0\n    with torch.no_grad():\n        for i, (batch, _) in enumerate(dataloader):\n            if max_batches and i >= max_batches:\n                break\n            _, metrics = compute_loss_batch(model, batch, args, noise_scheduler, loss_deform, generator, accelerator)\n            for k, v in metrics.items():\n                totals[k] = totals.get(k, torch.tensor(0.0, device=accelerator.device)) + accelerator.gather(v.reshape(1)).mean()\n            count += 1\n    denom = max(count, 1)\n    out = {f'{prefix}/{k}': (v / denom).item() for k, v in totals.items()}\n    model.train()\n    return out\n"
+        },
+        {
+          "start": 61,
+          "end": 61,
+          "replacement": "def _snapshot_source(output_dir):\n    source_root = Path(__file__).resolve().parent\n    snapshot = Path(output_dir) / \"src\"\n    for folder in (\"model\", \"dataset\", \"utils\"):\n        shutil.copytree(\n            source_root / folder, snapshot / folder,\n            ignore=shutil.ignore_patterns(\"__pycache__\"), dirs_exist_ok=True,\n        )\n    for name in (\"train.py\", \"options.py\", \"pipeline_traj.py\"):\n        shutil.copy(source_root / name, snapshot / name)\n\n\ndef _phase_dataset_config(base_config, phase_config):\n    base = OmegaConf.create(OmegaConf.to_container(base_config, resolve=True))\n    override = OmegaConf.create(OmegaConf.to_container(phase_config, resolve=True))\n    return OmegaConf.merge(base, override)\n\n\ndef _build_training_dataloader(args, accelerator):\n    phase_balanced = args.get(\"phase_balanced\")\n    if not phase_balanced or not phase_balanced.get(\"enabled\", False):\n        dataset = TrajDataset(\"train\", args.train_dataset)\n        dataloader = torch.utils.data.DataLoader(\n            dataset, batch_size=args.train_batch_size, shuffle=True,\n            num_workers=args.dataloader_num_workers, pin_memory=True,\n        )\n        return dataset, dataloader, None\n    expected_world_size = int(phase_balanced.expected_world_size)\n    if expected_world_size != accelerator.num_processes:\n        raise RuntimeError(\n            \"Phase-balanced world-size mismatch: \"\n            f\"config={expected_world_size} actual={accelerator.num_processes}\"\n        )\n    if int(args.gradient_accumulation_steps) != 1:\n        raise RuntimeError(\"Phase-balanced training requires gradient_accumulation_steps=1\")\n    recovery = phase_balanced.get(\"recovery\")\n    if args.resume_from_checkpoint and not recovery:\n        raise ValueError(\n            \"Phase-balanced resume requires an explicit recovery cursor; \"\n            \"refusing to replay already consumed samples\"\n        )\n    solid_config = _phase_dataset_config(args.train_dataset, phase_balanced.solid_dataset)\n    gas_config = _phase_dataset_config(args.train_dataset, phase_balanced.gas_dataset)\n    solid_dataset = TrajDataset(\"train\", solid_config)\n    gas_dataset = TrajDataset(\"train\", gas_config)\n    dataset = PhaseBalancedDataset(solid_dataset, gas_dataset)\n    target_exposure = int(phase_balanced.target_exposure_per_phase)\n    sampler = PhaseBalancedBatchSampler(\n        solid_count=len(solid_dataset), gas_count=len(gas_dataset),\n        target_solid_examples=target_exposure, target_gas_examples=target_exposure,\n        solid_per_batch=int(phase_balanced.local_batch_solid),\n        gas_per_batch=int(phase_balanced.local_batch_gas),\n        sampler_seed=int(phase_balanced.sampler_seed),\n        world_size=accelerator.num_processes,\n        optimizer_steps=int(args.max_train_steps),\n        gradient_accumulation_steps=int(args.gradient_accumulation_steps),\n    )\n    if args.train_batch_size != sampler.local_batch_size:\n        raise RuntimeError(\"train_batch_size must equal the phase-balanced local batch size\")\n    if accelerator.is_main_process:\n        logger.info(\"PHASE_BALANCED_DATASET %s\", sampler.audit())\n        for phase, config in ((\"solid\", solid_config), (\"gas\", gas_config)):\n            logger.info(\n                \"PHASE_BALANCED_MANIFEST phase=%s path=%s sha256=%s\",\n                phase, config.dataset_list, _sha256_file(Path(config.dataset_list)),\n            )\n    batch_sampler = sampler\n    if recovery:\n        if recovery.policy != \"replay_skips_replace_invalid_labels\":\n            raise ValueError(\"Unsupported phase recovery policy\")\n        batch_sampler = RecoveryBatchSampler(\n            sampler, recovery.consumed_batches, recovery.skipped_batches,\n            stop_after=recovery.get(\"smoke_steps\"),\n        )\n        if batch_sampler.completed_updates != int(recovery.completed_updates):\n            raise ValueError(\"Recovery cursor and completed updates disagree\")\n        dataset = ValidatedRecoveryDataset(dataset, recovery.replacement_seed)\n    dataloader = torch.utils.data.DataLoader(\n        dataset, batch_sampler=batch_sampler,\n        num_workers=args.dataloader_num_workers, pin_memory=True,\n    )\n    return dataset, dataloader, sampler\n\n\ndef _phase_counter(batch, expected_solid, expected_gas):\n    phase_ids = batch.get(\"phase_id\")\n    if phase_ids is None:\n        raise KeyError(\"Phase-balanced batch is missing phase_id\")\n    phase_ids = phase_ids.reshape(-1)\n    solid_count = int(phase_ids.eq(PhaseBalancedDataset.SOLID).sum().item())\n    gas_count = int(phase_ids.eq(PhaseBalancedDataset.GAS).sum().item())\n    if solid_count != expected_solid or gas_count != expected_gas:\n        raise RuntimeError(\n            \"Invalid phase-balanced local batch composition: \"\n            f\"solid={solid_count} gas={gas_count} expected={expected_solid}/{expected_gas}\"\n        )\n    return solid_count, gas_count\n\n\ndef _write_phase_balanced_final(\n    args, accelerator, sampler, global_step, local_batches, local_solid, local_gas,\n):\n    counts = torch.tensor(\n        [local_batches, local_solid, local_gas], dtype=torch.long,\n        device=accelerator.device,\n    )\n    gathered = accelerator.gather(counts.unsqueeze(0)).detach().cpu().tolist()\n    if not accelerator.is_main_process:\n        return\n    if int(global_step) != int(args.max_train_steps):\n        raise RuntimeError(\"Phase-balanced training ended before the requested optimizer steps\")\n    totals = [sum(row[index] for row in gathered) for index in range(3)]\n    expected = [\n        int(args.max_train_steps) * accelerator.num_processes,\n        int(args.phase_balanced.target_exposure_per_phase),\n        int(args.phase_balanced.target_exposure_per_phase),\n    ]\n    if totals != expected:\n        raise RuntimeError(\n            f\"Phase-balanced exposure verification failed: actual={totals} expected={expected}\"\n        )\n    report = sampler.audit()\n    report.update(\n        state=\"verified\", global_step=int(global_step),\n        actual_global_local_batches=totals[0], actual_solid_examples=totals[1],\n        actual_gas_examples=totals[2],\n        per_rank_counters=[\n            dict(local_batches=row[0], solid_examples=row[1], gas_examples=row[2])\n            for row in gathered\n        ],\n    )\n    if args.phase_balanced.get(\"recovery\"):\n        report[\"recovery\"] = OmegaConf.to_container(args.phase_balanced.recovery, resolve=True)\n        report[\"exposure_definition\"] = \"samples in successful optimizer updates, including checkpoint prefix\"\n        report[\"historical_skipped_global_batches\"] = len(args.phase_balanced.recovery.skipped_batches)\n        report[\"replacement_audit\"] = \"recovery_rank*.jsonl (delivered batches only)\"\n    output = Path(args.output_dir) / \"phase_balanced_final.json\"\n    output.write_text(json.dumps(report, indent=2) + \"\\n\", encoding=\"utf-8\")\n    logger.info(\"PHASE_BALANCED_VERIFIED %s\", report)\n\n\n"
+        },
+        {
+          "start": 62,
+          "end": 62,
+          "replacement": "    protocol_report = validate_protocol_manifests(args)\n"
+        },
+        {
+          "start": 67,
+          "end": 67,
+          "replacement": "    dataloader_config = None\n    if args.get(\"phase_balanced\") and args.phase_balanced.get(\"enabled\", False):\n        dataloader_config = DataLoaderConfiguration(even_batches=False, split_batches=False)\n"
+        },
+        {
+          "start": 72,
+          "end": 72,
+          "replacement": "        dataloader_config=dataloader_config,\n"
+        },
+        {
+          "start": 90,
+          "end": 90,
+          "replacement": "    if accelerator.is_main_process and protocol_report:\n        logger.info(\"PROTOCOL_LOCK %s\", protocol_report)\n"
+        },
+        {
+          "start": 115,
+          "end": 121,
+          "replacement": "        _snapshot_source(args.output_dir)\n"
+        },
+        {
+          "start": 135,
+          "end": 136,
+          "replacement": "    if args.model_type == 'dit_st_phase':\n        from model.phase_single import PhaseConditionedMDM_ST\n"
+        },
+        {
+          "start": 137,
+          "end": 139,
+          "replacement": "        model = PhaseConditionedMDM_ST(\n            args.pc_size,\n            args.train_dataset.n_training_frames,\n            n_feats=3,\n            model_config=args.model_config,\n        )\n    else:\n        model = MDM_ST(args.pc_size, args.train_dataset.n_training_frames, n_feats=3, model_config=args.model_config)\n\n    if args.gradient_checkpointing:\n        model.enable_gradient_checkpointing()\n"
+        },
+        {
+          "start": 176,
+          "end": 178,
+          "replacement": "    train_dataset, train_dataloader, phase_balanced_sampler = _build_training_dataloader(\n        args, accelerator\n    )\n"
+        },
+        {
+          "start": 179,
+          "end": 180,
+          "replacement": "    val_dataset_cfg = OmegaConf.create(OmegaConf.to_container(args.train_dataset, resolve=True))\n    if args.val_dataset_list:\n        val_dataset_cfg.dataset_list = args.val_dataset_list\n    val_dataset = TrajDataset('test' if args.val_dataset_list else 'val', val_dataset_cfg)\n"
+        },
+        {
+          "start": 181,
+          "end": 181,
+          "replacement": "    test_dataloader = None\n    if args.test_dataset_list:\n        test_dataset_cfg = OmegaConf.create(OmegaConf.to_container(args.train_dataset, resolve=True))\n        test_dataset_cfg.dataset_list = args.test_dataset_list\n        test_dataset = TrajDataset('test', test_dataset_cfg)\n        test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=args.eval_batch_size, shuffle=False, num_workers=args.dataloader_num_workers)\n"
+        },
+        {
+          "start": 205,
+          "end": 208,
+          "replacement": "    if test_dataloader is not None:\n        model, optimizer, train_dataloader, val_dataloader, test_dataloader, lr_scheduler = accelerator.prepare(\n            model, optimizer, train_dataloader, val_dataloader, test_dataloader, lr_scheduler\n        )\n    else:\n        model, optimizer, train_dataloader, val_dataloader, lr_scheduler = accelerator.prepare(\n            model, optimizer, train_dataloader, val_dataloader, lr_scheduler\n        )\n"
+        },
+        {
+          "start": 220,
+          "end": 221,
+          "replacement": "    recovery = args.phase_balanced.get(\"recovery\") if phase_balanced_sampler is not None else None\n    args.num_train_epochs = (\n        1 if recovery else math.ceil(args.max_train_steps / num_update_steps_per_epoch)\n    )\n"
+        },
+        {
+          "start": 237,
+          "end": 237,
+          "replacement": "    local_phase_batches = 0\n    local_phase_solid = 0\n    local_phase_gas = 0\n"
+        },
+        {
+          "start": 257,
+          "end": 258,
+          "replacement": "            checkpoint_path = (\n                str(args.resume_from_checkpoint)\n                if recovery and args.resume_from_checkpoint != \"latest\"\n                else os.path.join(args.output_dir, path)\n            )\n            accelerator.load_state(checkpoint_path)\n"
+        },
+        {
+          "start": 262,
+          "end": 262,
+          "replacement": "            if recovery:\n                if global_step != int(recovery.completed_updates):\n                    raise ValueError(\"Checkpoint step differs from recovery cursor\")\n                first_epoch = 0\n                local_phase_batches = global_step\n                local_phase_solid = global_step * phase_balanced_sampler.solid_per_batch\n                local_phase_gas = global_step * phase_balanced_sampler.gas_per_batch\n                set_seed(int(recovery.rng_seed) + accelerator.process_index)\n"
+        },
+        {
+          "start": 264,
+          "end": 264,
+          "replacement": "    if recovery and initial_global_step == 0:\n        raise RuntimeError(\"Recovery requires a valid checkpoint; refusing fresh training\")\n    recovery_audit = None\n    if recovery:\n        recovery_audit = (\n            Path(args.output_dir) / f\"recovery_rank{accelerator.process_index}.jsonl\"\n        ).open(\"x\", encoding=\"utf-8\")\n"
+        },
+        {
+          "start": 286,
+          "end": 286,
+          "replacement": "            if phase_balanced_sampler is not None:\n                solid_count, gas_count = _phase_counter(\n                    batch, phase_balanced_sampler.solid_per_batch,\n                    phase_balanced_sampler.gas_per_batch,\n                )\n"
+        },
+        {
+          "start": 287,
+          "end": 288,
+          "replacement": "                loss, metric_tensors = compute_loss_batch(model, batch, args, noise_scheduler, loss_deform, generator, accelerator)\n                finite_loss = torch.tensor([1.0 if torch.isfinite(loss).item() else 0.0], device=accelerator.device)\n                all_finite = accelerator.gather(finite_loss).min().item() > 0.5\n                if not all_finite:\n                    optimizer.zero_grad(set_to_none=True)\n                    if phase_balanced_sampler is not None:\n                        diagnostic = {\n                            \"global_step\": global_step, \"dataloader_step\": step,\n                            \"rank\": accelerator.process_index, \"samples\": list(batch[\"model\"]),\n                            \"metrics\": {key: str(value.item()) for key, value in metric_tensors.items()},\n                        }\n                        diagnostic_path = Path(args.output_dir) / f\"nonfinite_rank{accelerator.process_index}.json\"\n                        diagnostic_path.write_text(json.dumps(diagnostic, indent=2), encoding=\"utf-8\")\n                        raise FloatingPointError(\n                            f\"Non-finite loss invalidates exact exposure; see {diagnostic_path}\"\n                        )\n                    if accelerator.is_main_process:\n                        logger.warning(\n                            f\"Skipping non-finite loss at epoch={epoch}, dataloader_step={step}, global_step={global_step}\"\n                        )\n                    continue\n"
+        },
+        {
+          "start": 289,
+          "end": 352,
+          "replacement": "                losses = {k: v.item() for k, v in metric_tensors.items()}\n"
+        },
+        {
+          "start": 360,
+          "end": 361,
+          "replacement": "                    grad_norm = accelerator.clip_grad_norm_(model.parameters(), args.max_grad_norm)\n                    if phase_balanced_sampler is not None:\n                        grad_finite = torch.isfinite(grad_norm).reshape(1).to(torch.long)\n                        if not bool(accelerator.gather(grad_finite).all()):\n                            raise FloatingPointError(\"Non-finite gradient; refusing optimizer update\")\n"
+        },
+        {
+          "start": 369,
+          "end": 369,
+          "replacement": "                if phase_balanced_sampler is not None:\n                    local_phase_batches += 1\n                    local_phase_solid += solid_count\n                    local_phase_gas += gas_count\n                if recovery_audit is not None:\n                    replacements = []\n                    for item, rejected in enumerate(batch[\"recovery_rejections\"]):\n                        if rejected != \"[]\":\n                            replacements.append({\n                                \"requested_index\": int(batch[\"recovery_requested_index\"][item]),\n                                \"actual_index\": int(batch[\"recovery_actual_index\"][item]),\n                                \"actual_sample\": batch[\"model\"][item],\n                                \"rejected\": json.loads(rejected),\n                            })\n                    recovery_audit.write(json.dumps({\n                        \"step\": global_step, \"local_solid\": solid_count, \"local_gas\": gas_count,\n                        \"samples\": list(batch[\"model\"]), \"replacements\": replacements,\n                        \"loss\": float(loss.detach()),\n                    }) + \"\\n\")\n                    recovery_audit.flush()\n"
+        },
+        {
+          "start": 371,
+          "end": 372,
+          "replacement": "                if global_step % args.checkpointing_steps == 0 or (\n                    recovery and global_step == initial_global_step + int(recovery.get(\"smoke_steps\", 0))\n                ):\n"
+        },
+        {
+          "start": 393,
+          "end": 395,
+          "replacement": "                    # All ranks save their RNG state for distributed recovery.\n                    save_path = os.path.join(args.output_dir, f\"checkpoint-{global_step}\")\n                    accelerator.save_state(save_path)\n                    if accelerator.is_main_process:\n"
+        },
+        {
+          "start": 397,
+          "end": 398,
+          "replacement": "                if args.loss_eval_steps and global_step % args.loss_eval_steps == 0:\n                    eval_logs = evaluate_loss_only(model, val_dataloader, args, noise_scheduler, loss_deform, generator, accelerator, 'val', args.loss_eval_max_batches)\n                    if test_dataloader is not None and args.evaluate_test_during_training:\n                        eval_logs.update(evaluate_loss_only(model, test_dataloader, args, noise_scheduler, loss_deform, generator, accelerator, 'test', args.loss_eval_max_batches))\n                    if accelerator.is_main_process:\n                        logger.info('Loss eval step %s: %s', global_step, eval_logs)\n                    accelerator.log(eval_logs, step=global_step)\n\n                if args.gen_eval_steps and global_step % args.gen_eval_steps == 0:\n                    gen_dataloader = test_dataloader if args.evaluate_test_during_training and test_dataloader is not None else val_dataloader\n                    gen_split = 'gen_test' if args.evaluate_test_during_training and test_dataloader is not None else 'gen_val'\n                    gen_logs = evaluate_generation_metrics(model, gen_dataloader, args, noise_scheduler, loss_deform, accelerator, gen_split, args.gen_eval_max_batches, global_step)\n                    if accelerator.is_main_process:\n                        logger.info('Generation eval step %s: %s', global_step, gen_logs)\n                    accelerator.log(gen_logs, step=global_step)\n\n                if global_step % cfg.validation_steps == 0 or (global_step == 1 and cfg.validation_sanity_check):\n"
+        },
+        {
+          "start": 408,
+          "end": 409,
+          "replacement": "                                    output = pipeline(batch['points_src'], batch['force'], batch['E'], batch['nu'], batch['mask'][..., :1], batch['drag_point'], batch['floor_height'], batch['gravity'], batch['base_drag_coeff'], y=None if 'mat_type' not in batch else batch['mat_type'], init_vel=batch.get('init_vel'), physics_volume=batch.get('physics_volume'), device=accelerator.device, batch_size=args.eval_batch_size, generator=torch.Generator().manual_seed(args.seed), n_frames=args.train_dataset.n_training_frames, guidance_scale=guidance_scale)\n"
+        },
+        {
+          "start": 431,
+          "end": 431,
+          "replacement": "            if recovery and recovery.get(\"smoke_steps\") and global_step >= initial_global_step + int(recovery.smoke_steps):\n                break\n"
+        },
+        {
+          "start": 434,
+          "end": 434,
+          "replacement": "    if recovery_audit is not None:\n        recovery_audit.close()\n    if recovery and recovery.get(\"smoke_steps\"):\n        if global_step != initial_global_step + int(recovery.smoke_steps):\n            raise RuntimeError(\"Recovery smoke ended early\")\n        logger.info(\"RECOVERY_SMOKE_COMPLETE step=%d\", global_step)\n        accelerator.end_training()\n        return\n    if phase_balanced_sampler is not None:\n        _write_phase_balanced_final(\n            args, accelerator, phase_balanced_sampler, global_step,\n            local_phase_batches, local_phase_solid, local_phase_gas,\n        )\n        accelerator.wait_for_everyone()\n"
+        },
+        {
+          "start": 446,
+          "end": 447,
+          "replacement": "    main(cfg)\n"
+        }
+      ]
+    },
+    "src/utils/physics.py": {
+      "base_sha256": "4a10b8e399cdfa4458d80ad0a6956b468dc941d709898b9d97bf3f752fb8fa74",
+      "result_sha256": "790850a47d44ddbe5a874d03672f538487d6e93147b5255cb9d3422979a371f6",
+      "edits": [
+        {
+          "start": 6,
+          "end": 6,
+          "replacement": "\n\ndef solid_mpm_mask(batch, batch_size=None, device=None):\n    \"\"\"Return the samples that carry real solid-MPM deformation semantics.\"\"\"\n    if batch_size is None:\n        batch_size = batch['points_tgt'].shape[0]\n    if device is None:\n        device = batch['points_tgt'].device\n\n    mask = torch.ones(batch_size, dtype=torch.bool, device=device)\n    if 'is_mpm' in batch:\n        mask &= batch['is_mpm'].to(device=device, dtype=torch.bool).reshape(-1)\n    if 'mat_type' in batch:\n        material_type = batch['mat_type'].to(device=device).reshape(-1)\n        mask &= material_type.ne(4)\n    return mask\n\n"
+        },
+        {
+          "start": 251,
+          "end": 252,
+          "replacement": "    return loss\n"
+        }
+      ]
+    },
+    "src/utils/seeding.py": {
+      "base_sha256": "f50215f5f691bca98d1c35e8d915f2559c0a1242d3784e9a531155d1295f27ef",
+      "result_sha256": "f50215f5f691bca98d1c35e8d915f2559c0a1242d3784e9a531155d1295f27ef",
+      "edits": []
+    },
+    "src/utils/visualization.py": {
+      "base_sha256": "0b6681a39a9fb9a68a58e19bd20ac36f86964cc078051567323ee77680795b5a",
+      "result_sha256": "e0272fc0845b94cbb757392e37419150b2269287e0aba62df2d690089f7eee94",
+      "edits": [
+        {
+          "start": 361,
+          "end": 381,
+          "replacement": ""
+        }
+      ]
+    }
+  }
+}

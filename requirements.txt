@@ -1,0 +1,19 @@
+diffusers==0.39.0
+accelerate==1.13.0
+moviepy==1.0.3
+numpy==1.26.4
+opencv-python==4.11.0.86
+huggingface_hub==0.36.0
+SentencePiece==0.1.99
+
+matplotlib==3.7.0
+pyyaml==6.0.3
+h5py==3.16.0
+einops==0.8.2
+transformers==4.49.0
+omegaconf==2.3.0
+safetensors==0.8.0
+scipy==1.10.1
+imageio
+imageio-ffmpeg
+# Install torch and torchvision for the same CUDA build first.

@@ -1,0 +1,94 @@
+image_size: 128
+output_dir: runs/stage1_solid
+seed: 20260822
+train_batch_size: 1
+eval_batch_size: 1
+num_train_epochs: 100
+max_train_steps: 60000
+gradient_accumulation_steps: 4
+gradient_checkpointing: false
+learning_rate: 1.0e-4
+scale_lr: false
+lr_scheduler: cosine
+lr_warmup_steps: 100
+use_8bit_adam: false
+allow_tf32: true
+dataloader_num_workers: 2
+adam_beta1: 0.9
+adam_beta2: 0.999
+adam_weight_decay: 1.0e-2
+adam_epsilon: 1.0e-8
+max_grad_norm: 1.0
+prediction_type: null
+vis_dir: vis
+logging_dir: logs
+mixed_precision: bf16
+report_to: null
+local_rank: -1
+tracker_project_name: s1_b_solid
+push_to_hub: false
+set_grads_to_none: true
+checkpointing_steps: 2500
+checkpoints_total_limit: 10
+resume_from_checkpoint: null
+resume_step: null
+overfit: false
+pred_offset: true
+enable_xformers_memory_efficient_attention: false
+validation_steps: 999999
+validation_train_steps: 2000
+validation_sanity_check: false
+lambda_vel: 1.0
+lambda_mask: 0.0
+lambda_momentum: 0.0
+lambda_deform: 0.001
+lambda_floor: 1.0
+lambda_gas_advection: 0.0
+lambda_gas_divergence: 0.0
+pc_size: 2048
+condition_drop_rate: 0.0
+model_type: dit_st_phase
+model_config:
+  n_layers: 8
+  latent_dim: 256
+  frame_cond: true
+  point_embed: true
+  mask_cond: false
+  pred_offset: true
+  num_neighbors: -1
+  floor_cond: false
+  max_num_forces: 1
+  force_as_token: false
+  force_as_latent: false
+  coeff_cond: false
+  class_token: false
+  physics_condition: true
+  physics_num_materials: 5
+  transformer_block: SpatialTemporalTransformerBlock
+train_dataset:
+  category: physctrl_solid_source_disjoint
+  dataset_path: datasets
+  dataset_list: manifests/solid_train_paths.json
+  explicit_split_manifest: true
+  has_gravity: true
+  max_num_forces: ${model_config.max_num_forces}
+  norm_fac: 5
+  stage: deform
+  mode: diff
+  pc_size: ${pc_size}
+  repeat: 1
+  seed: 20260822
+  n_sample_pro_model: 300
+  n_frames_interval: 2
+  frame_dt: 0.05
+  n_training_frames: 24
+  batch_size: 20
+  overfit: false
+loss_eval_steps: 500
+loss_eval_max_batches: 8
+val_dataset_list: manifests/solid_val_paths.json
+test_dataset_list: manifests/solid_test_paths.json
+evaluate_test_during_training: false
+gen_eval_steps: 0
+gen_eval_max_batches: 0
+gen_eval_num_inference_steps: 25

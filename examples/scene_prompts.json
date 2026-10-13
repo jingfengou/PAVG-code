@@ -1,0 +1,197 @@
+{
+  "protocol_id": "PAVG-normalized32-scaled-conditions-20261011",
+  "scenes": [
+    {
+      "scene": "sandbag_drop",
+      "name_en": "Falling sandbag and dust",
+      "group": "interaction",
+      "prompt": "A burlap sandbag is initially at rest above an existing cloud of airborne dust. Gravity makes the sandbag fall toward the ground while the dust initially drifts upward. As the bag enters the dust, nearby dust bends around the falling bag and spreads near the ground. The bag stays intact throughout the fall and contact. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene03a",
+      "name_en": "Tennis ball and dust",
+      "group": "interaction",
+      "prompt": "A rigid tennis ball is initially at rest beside a visible cloud of airborne dust. A push on the left rear surface accelerates the ball to the right. The existing dust drifts to the left before the ball reaches it. As the ball moves through the dust, the nearby dust bends around its surface and continues flowing. The ball keeps its shape. Gravity is disabled. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene05a",
+      "name_en": "Pot lid and steam",
+      "group": "interaction",
+      "prompt": "A rigid pot lid is surrounded by visible steam already rising in the air. A pull on the knob lifts the lid upward and slightly to the left. The lid retains its shape during the motion. The existing steam initially rises upward and slightly to the right. As the lid moves through the steam, nearby wisps curl around its surface and continue rising. Gravity is disabled. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene05b",
+      "name_en": "Pot lid and haze",
+      "group": "interaction",
+      "prompt": "A rigid pot lid is surrounded by visible haze already suspended in the air. A pull on the knob lifts the lid upward and slightly to the left. The lid retains its shape during the motion. The existing haze initially moves upward and slightly to the right. As the lid moves through it, nearby haze curls around the lid and continues drifting. Gravity is disabled. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene05c",
+      "name_en": "Pot lid and haze: rightward",
+      "group": "interaction",
+      "prompt": "A rigid pot lid is surrounded by visible haze already suspended in the air. A pull on the knob lifts the lid upward and slightly to the right. The lid retains its shape during the motion. The existing haze initially moves upward and slightly to the left. As the lid moves through it, nearby haze curls around the lid and continues drifting. Gravity is disabled. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene06a",
+      "name_en": "Sponge and mist: rightward",
+      "group": "interaction",
+      "prompt": "An elastic sponge is surrounded by a visible cloud of fine water mist. A push on its left rear face moves the sponge to the right and deforms its soft body. The existing airborne mist initially drifts to the left and slightly upward. As the deforming sponge passes through it, the nearby mist curls around the sponge and disperses through the air. Gravity is disabled. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene06c",
+      "name_en": "Sponge and mist: leftward",
+      "group": "interaction",
+      "prompt": "An elastic sponge is surrounded by a visible cloud of fine water mist. A push on its rear handling patch moves the sponge to the left and slightly upward, deforming its soft body. The existing airborne mist initially drifts to the right and slightly upward. As the sponge passes through it, the nearby mist curls around the sponge and disperses through the air. Gravity is disabled. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene07a",
+      "name_en": "Cushion and haze",
+      "group": "interaction",
+      "prompt": "An elastic cushion is surrounded by visible haze already suspended in the air. A push at its lower-left edge moves the cushion upward and slightly to the right, deforming its soft body. The existing haze initially drifts upward and to the left. As the cushion moves through it, nearby haze curls around the cushion and continues flowing. Gravity is disabled. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene07b",
+      "name_en": "Cushion and dust",
+      "group": "interaction",
+      "prompt": "An elastic cushion is surrounded by a visible cloud of airborne dust. A push on its rear handling patch moves the cushion upward and slightly to the left, deforming its soft body. The existing dust initially drifts to the right and upward. As the cushion moves through it, nearby dust curls around the cushion and continues drifting. Gravity is disabled. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene07c",
+      "name_en": "Cushion and dust: rightward",
+      "group": "interaction",
+      "prompt": "An elastic cushion is surrounded by a visible cloud of airborne dust. A push on its rear handling patch moves the cushion upward and slightly to the right, deforming its soft body. The existing dust initially drifts to the left and upward. As the cushion moves through it, nearby dust curls around the cushion and continues drifting. Gravity is disabled. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene08a",
+      "name_en": "Beach volleyball and dust",
+      "group": "interaction",
+      "prompt": "A beach volleyball is initially at rest on the sand beside a large cloud of airborne dust. A horizontal force pushes the ball to the right along the sand. The existing dust cloud initially drifts to the left, toward the moving ball. As the ball enters the cloud, dust flows around it and spreads into a broad wake. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene08b",
+      "name_en": "Soccer ball and dust",
+      "group": "interaction",
+      "prompt": "A soccer ball is initially at rest on a dusty playground beside a large cloud of airborne dust. A horizontal force pushes the ball to the right along the playground. The existing dust cloud initially drifts to the left, toward the moving ball. As the ball enters the cloud, dust flows around it and spreads into a broad wake. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene08c",
+      "name_en": "Basketball and dust",
+      "group": "interaction",
+      "prompt": "A basketball is initially at rest on a dirt court beside a large cloud of airborne dust. A horizontal force pushes the ball to the right along the court. The existing dust cloud initially drifts to the left, toward the moving ball. As the ball enters the cloud, dust flows around it and spreads into a broad wake. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene09a",
+      "name_en": "Fighter jet and clouds",
+      "group": "interaction",
+      "prompt": "A rigid aircraft is surrounded by visible cloud already suspended in the air. A force applied to the forward fuselage drives the aircraft nose-first toward the lower left. The aircraft keeps its shape. The existing cloud initially drifts toward the upper right. As the aircraft passes through it, nearby cloud bends around the fuselage and wings and continues flowing. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene09b",
+      "name_en": "Fighter jet: force on left wing",
+      "group": "interaction",
+      "prompt": "A rigid aircraft is surrounded by visible clouds already suspended in the air. A vertically upward force applied to the left wing, as identified from the pilot viewpoint, raises that wing and lowers the right wing, rolling the aircraft. Its structure remains rigid. The existing clouds initially move along the fuselage toward the nose and deflect around the wings as the aircraft rolls. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene09c",
+      "name_en": "Fighter jet: force on right wing",
+      "group": "interaction",
+      "prompt": "A rigid aircraft is surrounded by visible clouds already suspended in the air. A vertically upward force applied to the right wing, as identified from the pilot viewpoint, raises that wing and lowers the left wing, rolling the aircraft. Its structure remains rigid. The existing clouds initially move along the fuselage toward the tail and deflect around the wings as the aircraft rolls. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene04b",
+      "name_en": "Smoke: up-left",
+      "group": "gas",
+      "prompt": "A visible cloud of smoke is already suspended in the air. The smoke drifts to the left and upward, moving farther sideways than upward. Its wisps bend and curl as the cloud travels, and the smoke gradually disperses. The motion belongs to the existing smoke cloud. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene04c",
+      "name_en": "Smoke: down-right",
+      "group": "gas",
+      "prompt": "A visible cloud of smoke is already suspended in the air. The smoke drifts to the right and downward, moving farther downward than sideways. Its wisps bend and curl as the cloud travels, and the smoke gradually disperses. The motion belongs to the existing smoke cloud. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene10a",
+      "name_en": "Dust: up-right",
+      "group": "gas",
+      "prompt": "Fine airborne dust is already suspended in the air as a visible cloud. The existing dust drifts to the right and slightly upward. The moving cloud curls into wisps and gradually disperses through the air. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene10b",
+      "name_en": "Dust: up-left",
+      "group": "gas",
+      "prompt": "Fine airborne dust is already suspended in the air as a visible cloud. The existing dust drifts to the left and slightly upward. The moving cloud curls into wisps and gradually disperses through the air. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene10c",
+      "name_en": "Dust: strong up-right velocity",
+      "group": "gas",
+      "prompt": "Fine airborne dust is already suspended in the air as a visible cloud. The existing dust drifts to the right and upward, moving farther sideways than upward. The moving cloud curls into wisps and gradually disperses through the air. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene11a",
+      "name_en": "Mist: up-right",
+      "group": "gas",
+      "prompt": "A visible cloud of fine water mist is already suspended in the air. The existing mist drifts to the right and upward. Its fine droplets form moving wisps that curl and gradually disperse through the air. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene11b",
+      "name_en": "Mist: up-left",
+      "group": "gas",
+      "prompt": "A visible cloud of fine water mist is already suspended in the air. The existing mist drifts to the left and upward. Its fine droplets form moving wisps that curl and gradually disperse through the air. The camera and background remain fixed."
+    },
+    {
+      "scene": "scene11c",
+      "name_en": "Mist: gentle up-right rise",
+      "group": "gas",
+      "prompt": "A visible cloud of fine water mist is already suspended in the air. The existing mist drifts to the right and slightly upward. Its fine droplets form moving wisps that curl and gradually disperse through the air. The camera and background remain fixed."
+    },
+    {
+      "scene": "bear",
+      "name_en": "Sand bear",
+      "group": "solid",
+      "prompt": "A bear-shaped statue made of fine sand drops toward the ground. It remains a recognizable sand bear as it falls. When it contacts the ground, its granular body collapses and spreads into a loose pile of fine sand. The camera and background remain fixed."
+    },
+    {
+      "scene": "blanket",
+      "name_en": "Blanket",
+      "group": "solid",
+      "prompt": "A soft striped fabric blanket is initially resting on the ground. An upward pull at its center lifts the middle of the blanket away from the ground. The surrounding fabric follows the central pull, bending and folding as the blanket rises. It remains one continuous blanket throughout the motion. The camera and background remain fixed."
+    },
+    {
+      "scene": "chair",
+      "name_en": "Chair",
+      "group": "solid",
+      "prompt": "A chair is lifted by an upward force. The chair moves upward as a whole while its seat, back and legs retain their original shapes and arrangement. Its structure does not bend or deform during the lift. The camera and background remain fixed."
+    },
+    {
+      "scene": "earphone",
+      "name_en": "Headphones",
+      "group": "solid",
+      "prompt": "The earphone shown in the reference image is lifted by an upward pull on its handle. The pull makes the earphone rise and rotate as it moves. Its motion follows the pull applied at the handle. The camera and background remain fixed."
+    },
+    {
+      "scene": "giraffeX",
+      "name_en": "Giraffe",
+      "group": "solid",
+      "prompt": "The giraffe-shaped object shown in the reference image is pulled by a force applied to a local part of its body. The force moves the object upward and to the left, lifting it into the air. The camera and background remain fixed."
+    },
+    {
+      "scene": "nailong",
+      "name_en": "Nailong clay figurine",
+      "group": "solid",
+      "prompt": "A yellow plasticine dinasour toy free falls to the table due to gravity. It has no deformation before it touches the table. After it touches the table, it deforms."
+    },
+    {
+      "scene": "penguin",
+      "name_en": "Penguin",
+      "group": "solid",
+      "prompt": "The penguin-shaped object shown in the reference image is lifted by an upward force applied to its left wing. The object rises into the air in response to the force on that wing. The camera and background remain fixed."
+    },
+    {
+      "scene": "transformer",
+      "name_en": "Transformer",
+      "group": "solid",
+      "prompt": "A rigid transformer toy falls toward the ground under gravity. It retains its shape while falling. When it contacts the ground, it tips forward as a rigid object rather than deforming. The camera and background remain fixed."
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+# Runtime artifacts and private machine configuration.
+datasets/
+manifests/
+metadata/
+weights/
+runs/
+outputs/
+results/
+cache/
+configs/local/
+.venv/
+.env
+*.local.yaml
+*.local.yml
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.log
+*.pid
+*.tmp
+*.h5
+*.hdf5
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.npy
+*.npz
+*.mp4
+*.gif
+*.pem
+*.key
+.DS_Store
+Thumbs.db
+# Only reviewed, small examples are allowed.
+!examples/**/*.npz
+!examples/**/*.npy
+!examples/**/*.mp4
+
+# Separately acquired dependency source stays outside the public release.
+third_party/

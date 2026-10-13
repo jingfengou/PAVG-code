@@ -1,0 +1,106 @@
+run_label: pact_stage2
+protocol_variant: combined_v5
+seed: 20260820
+mdm_root: src
+dataset_root: datasets
+train_list: manifests/combined_train_paths.json
+val_list: manifests/combined_val_paths.json
+test_list: manifests/combined_test_paths.json
+protocol_lock_path: null
+object_metadata_sidecar: metadata/composite_object_physics_full.h5
+require_phase_presence: true
+output_dir: runs/stage2
+
+initialization:
+  mode: pretrained
+  solid_checkpoint: runs/stage1_solid/checkpoint-60000/model.safetensors
+  gas_checkpoint: runs/stage1_gas/checkpoint-60000/model.safetensors
+  shared_checkpoint: ""
+  stage1_init_source: specialized
+
+train_batch_size: 1
+eval_batch_size: 1
+gradient_accumulation_steps: 2
+max_train_steps: 60000
+learning_rate: 1.0e-4
+lr_warmup_steps: 100
+weight_decay: 1.0e-2
+max_grad_norm: 1.0
+mixed_precision: bf16
+gradient_checkpointing: false
+num_workers: 2
+prefetch_factor: 2
+checkpointing_steps: 2500
+checkpoints_total_limit: 10
+eval_steps: 500
+eval_max_batches: 8
+logging_steps: 10
+
+pc_size: 2048
+n_training_frames: 24
+n_frames_interval: 2
+physics_frame_dt: 0.0417
+deform_prediction_clip: 2.2
+norm_fac: 5.0
+context_dim: 32
+lambda_xyz: 1.0
+lambda_vel: 1.0
+lambda_deform: 1.0e-3
+lambda_floor: 1.0
+lambda_gas_divergence: 0.05
+lambda_transfer: 0.0
+lambda_gas_advection: 0.0
+lambda_coupling: 0.05
+coupling_min_magnitude: 1.0e-5
+coupling_target_scale: 0.0
+coupling_scale_min: 1.0e-4
+coupling_huber_beta: 1.0
+gas_advection_scale_min: 1.0e-4
+gas_divergence_max_centers: 256
+gas_divergence_num_neighbors: 8
+gas_divergence_regularization: 1.0e-3
+gas_divergence_scale_min: 1.0
+gas_divergence_residual_clip: 20.0
+gas_divergence_huber_beta: 1.0
+gas_weight: 1.0
+object_weight: 1.0
+
+model_config:
+  n_layers: 8
+  latent_dim: 256
+  frame_cond: true
+  pred_offset: true
+  transformer_block: SpatialTemporalTransformerBlock
+  context_dim: 32
+  physics_condition: true
+  physics_num_materials: 5
+  backbone_mode: separate
+  dit_cross_attention: true
+  dit_cross_attention_direction: object_to_gas
+  dit_cross_attention_spatial: true
+  dit_cross_attention_temporal: true
+  dit_cross_attention_heads: 4
+  coupling_head: false
+  stop_gradient_object_context: true
+
+composite_protocol: physctrl_composite_v2_canonical
+position_scale: 1.0
+velocity_scale: 1.0
+gas_force_scale: 1.0
+legacy_position_scale: 10.0
+legacy_velocity_scale: 10.0
+legacy_gas_force_scale: 0.1
+object_force_scale: 1.0
+gravity_override: 0
+object_physics_mode: required
+object_metadata_root: ""
+object_E_is_log10: false
+max_num_forces: 1
+
+aoss_enabled: false
+aoss_config_path: ""
+aoss_cache_dir: cache/trajectory
+aoss_cache_max_bytes: 53687091200
+aoss_cache_max_files: 32
+aoss_cache_batches: 0
+aoss_cache_batch_size: 1
