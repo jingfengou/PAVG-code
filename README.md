@@ -7,15 +7,13 @@ solid-gas interaction, then projects the trajectories to control a pretrained
 video generator. Solid and gas use separate diffusion branches; Stage 2
 initializes these branches from their corresponding Stage 1 models.
 
-This source release contains trajectory training, inference, fixed-protocol
-evaluation, and the mask-initialized trajectory-to-DaS video interface.
-It does not contain datasets, model weights, private launch scripts, or
-unverified experimental results. This is a source-only release: it does not
-advertise an included checkpoint or certify a completed benchmark run.
+This repository contains trajectory training, inference, evaluation, and the
+mask-initialized trajectory-to-DaS video interface. Model and data files are
+not included in Git; see [Pretrained Models](#pretrained-models) for availability.
 
 [Paper](https://arxiv.org/abs/2610.11791) ·
 [Project and videos](https://jingfengou.github.io/PAVG/) ·
-[Accepted inference protocol](docs/INFERENCE_PROTOCOL.md)
+[Inference guide](docs/INFERENCE_PROTOCOL.md)
 
 The scene-video pipeline includes shared normalization and condition scaling,
 restores predictions before projection, and exports 49 frames at 24 fps
@@ -45,11 +43,11 @@ python scripts/check_dependencies.py
 ```
 
 For an existing matching checkout, set `PAVG_PHYSCTRL_ROOT` to its location.
-See [third-party provenance](docs/THIRD_PARTY.md).
+See [third-party dependencies](docs/THIRD_PARTY.md).
 
 The released loader uses NumPy point sampling and does not require
-`torch-cluster`. Optional data-generation and baseline dependencies belong to the research
-workspace, not this minimal runtime. See [third-party notes](docs/THIRD_PARTY.md).
+`torch-cluster`. Additional data-generation and baseline tools may need their
+own dependencies. See [third-party notes](docs/THIRD_PARTY.md).
 
 ## Pretrained Models
 
@@ -58,11 +56,10 @@ inference. Training Stage 2 additionally requires specialized solid and gas
 Stage 1 checkpoints. Video generation uses DaS weights in the format expected
 by its CogVideoX tracking pipeline.
 
-Weights are external to Git. Put them in `weights/` or pass their locations
-explicitly. Public weight and dataset downloads are not included in this
-source release. The accepted checkpoint hash is recorded in
-[the protocol](configs/inference_protocol.json); it identifies an artifact,
-not a download link. Historical checkpoints must not be relabeled as corrected runs.
+Public checkpoint and dataset downloads are not available yet. To use a local
+PAVG checkpoint, place it in `weights/pavg/` or pass its location explicitly,
+together with its matching model configuration. Obtain DaS video weights
+separately from their authors.
 
 ## Dataset
 
@@ -73,8 +70,8 @@ The input schema, manifest naming, normalization and metadata requirements are
 described in [Data and Evaluation](docs/DATA_AND_EVALUATION.md).
 
 The repository includes two small input examples: a gas-only scene and a
-solid-gas scene. They contain clean images, masks and numeric initial
-conditions, **not ground-truth simulations or final-model result claims**.
+solid-gas scene. They contain images, masks and numeric initial conditions for
+input preparation; simulation targets are not included.
 See [examples](examples/README.md).
 
 ## Image to Video Generation
@@ -89,8 +86,7 @@ python scripts/run.py initialize -- \
   --gas-mask examples/interaction/gas_mask.png \
   --output-dir outputs/example/init
 
-# Predict with your matching checkpoint. The provided example preserves its
-# recorded point ordering and conditions.
+# Predict with a matching checkpoint and config.
 python scripts/run.py predict -- \
   --config configs/stage2.yaml \
   --checkpoint weights/pavg/model.safetensors \
@@ -130,7 +126,7 @@ Use `predict --prepare-only` to inspect adapted inputs on CPU without weights,
 and `video --check-only` to validate tracking media without synthesis.
 `--phase-mode gas` and `--interaction off` reuse the original joint transform
 for controlled diagnostics. See [Inference Protocol](docs/INFERENCE_PROTOCOL.md)
-for restoration, interpolation, RNG handling and validation limits.
+for restoration, interpolation and RNG handling.
 
 ## Training and Evaluation
 
@@ -237,18 +233,15 @@ examples/      Small input-only scenes
 docs/          Data contract and attribution
 ```
 
-Run `python scripts/audit_release.py` before packaging to check source files,
-private paths, generated artifacts and documentation links. The audit is not a
-substitute for the fixed benchmark or a full video synthesis run.
-See [release notes](docs/RELEASE_NOTES.md) for the fixes and validation scope.
+See [Verify your setup](docs/VERIFICATION.md) for dependency and CPU interface
+checks, and [release notes](docs/RELEASE_NOTES.md) for changes.
 
 ## Citation and Acknowledgments
 
 The manuscript is [PAVG: Phase-Aware physics-grounded controllable Video
-Generator](https://arxiv.org/abs/2610.11791). This snapshot does not claim
-conference acceptance.
+Generator](https://arxiv.org/abs/2610.11791).
 
 This implementation builds on PhysCtrl, Diffusion as Shader, CogVideoX and
 Diffusers. Retain their notices and follow the source and weight licenses.
 See [third-party notes](docs/THIRD_PARTY.md) for dependency boundaries and
-pinned-source provenance.
+pinned source versions.

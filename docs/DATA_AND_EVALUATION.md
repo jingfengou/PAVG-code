@@ -117,10 +117,9 @@ records source/config/checkpoint hashes and input/target hashes, and accepts
 starts at index zero, uses the configured seed unless explicitly overridden,
 and must not be presented as the current per-sample benchmark.
 
-## Publication checks
+## Reproducible evaluation
 
-Archive each reported checkpoint with its config, exact train/test manifests,
-code provenance, output JSON and SHA256. A completed training log is not a
-passing test result. A historical checksum verifies file identity, not
-compliance with the corrected training objective. Final corrected runs must
-pass evaluation before replacing previously cited values.
+Save each evaluated checkpoint with its config, exact train/test manifests,
+code and dependency versions, seeds, and per-sample output JSON. Keep these
+inputs fixed when comparing models or ablations, and recompute aggregate
+metrics from complete per-sample results.

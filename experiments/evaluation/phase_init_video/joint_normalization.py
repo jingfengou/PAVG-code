@@ -1,6 +1,6 @@
-"""The accepted 2026-10-11 input adaptation, extracted from the archived runner.
+"""Shared normalization for scene-to-video trajectory inputs.
 
-This is the frozen learned-model token policy, not a full SI similarity law.
+This matches learned-model input tokens, not a full SI similarity law.
 Phase slots are [gas, solid]. Inputs and restored outputs retain their dtype.
 """
 from __future__ import annotations

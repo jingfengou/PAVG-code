@@ -141,7 +141,7 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--normalization", choices=["joint", "none"], default="joint",
-                        help="Accepted shared bounding-box adaptation; none reproduces the legacy interface.")
+                        help="Shared bounding-box adaptation; none selects the legacy interface.")
     parser.add_argument("--interaction", choices=["on", "off"], default="on")
     parser.add_argument("--expected-checkpoint-sha256", help="Reject an unexpected checkpoint hash.")
     parser.add_argument("--prepare-only", action="store_true",
@@ -237,7 +237,7 @@ def main() -> None:
     if not all(np.isfinite(value).all() for value in adapted.values()):
         raise ValueError("Prepared model inputs contain non-finite values")
     preparation = {
-        "protocol_id": "PAVG-normalized32-scaled-conditions-20261011",
+        "protocol_id": "pavg-scene-video-v1",
         "normalization": args.normalization,
         "center": center.tolist(), "scale": scale,
         "phase_presence": phase_presence.tolist(),

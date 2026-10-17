@@ -15,7 +15,7 @@ PRIVATE_PATH = re.compile(
     r"(?<![\w])(?:[A-Za-z]:[\\/]|/(?:mnt|home|root|data1|Users|opt)/"
     r"|(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?)"
 )
-SECRET = re.compile(r"sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|BEGIN (?:RSA |OPENSSH )?PRIVATE KEY")
+SECRET = re.compile(r"sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|hf_[A-Za-z0-9]{20,}|BEGIN (?:RSA |OPENSSH )?PRIVATE KEY")
 EXCLUDED = {".git", "__pycache__", ".pytest_cache", ".venv", "outputs", "runs",
             "results", "datasets", "weights", "manifests", "metadata", "cache", "third_party"}
 BINARY_BLOCKLIST = {".h5", ".hdf5", ".pt", ".pth", ".safetensors", ".ckpt",

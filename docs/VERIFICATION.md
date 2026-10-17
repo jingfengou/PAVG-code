@@ -1,28 +1,62 @@
-# Source-release verification: October 13, 2026
+# Verify your setup
 
-The release was checked against retained accepted inputs and outputs on CPU:
+Run these checks from the repository root after installation.
 
-- Shared normalization reproduced 64 stored input variants across 32 scenes
-  element by element. Restoration reproduced all 64 saved trajectories.
-- The public CLI reproduced all 32 main inputs and 32 diagnostic inputs
-  (16 gas-only and 16 interaction-OFF), preserving the original joint transform.
-- Recomputed projected controls for `giraffeX`, `scene04b`, `scene03a`,
-  `scene05a`, `scene09a` and `scene08a` were exactly equal to the retained
-  tracks, including phase labels and source indices.
-- A small joint model constructed, loaded its state dict strictly, and ran
-  two diffusion steps on CPU. This is a runtime smoke check, not an evaluation
-  of the full pretrained checkpoint.
-- Tracking rendering and media checks produced/validated 49 frames at 24 fps.
-  A 48-frame control and an unexpected dependency source hash were rejected.
-- All 12 external source modules composed to their recorded source hashes;
-  the distributable source audit checked syntax, private paths, credential
-  patterns, artifacts, file size and documentation links.
+## Source and dependencies
 
-Numeric/runtime checks used Python 3.10.19 and PyTorch 2.11.0 on CPU.
-Reference training used PyTorch 2.5.1. The retained-archive array comparison
-also passed under NumPy 2.4.1. These checks do not establish GPU bitwise
-equivalence across dependency/hardware versions.
+```bash
+python scripts/audit_release.py
+python scripts/check_dependencies.py
+```
 
-No new full-checkpoint GPU synthesis, training or benchmark was run for this
-publication. The source release provides no dataset or checkpoint downloads
-and does not certify ground-truth physics accuracy.
+The source audit checks Python syntax, machine-specific paths, credential
+patterns, generated artifacts and documentation links. The dependency check
+verifies the pinned PhysCtrl source and the PAVG extensions.
+
+## Prepare an input on CPU
+
+```bash
+python scripts/run.py predict -- \
+  --config configs/stage2.yaml \
+  --checkpoint weights/pavg/model.safetensors \
+  --phase-inputs examples/interaction/phase_inputs.npz \
+  --condition-input examples/interaction/condition_input.npz \
+  --output outputs/check/prepared.npz \
+  --normalization joint --prepare-only
+```
+
+This writes adapted model inputs and a JSON settings sidecar. In
+`--prepare-only` mode, the checkpoint argument is a placeholder; no weights
+are opened. Check that the two phase slots remain in `[gas, solid]` order and
+share one normalization transform.
+
+## Check projection and tracking media
+
+```bash
+python scripts/run.py project -- \
+  --phase-inputs examples/gas/phase_inputs.npz \
+  --gas-mask examples/gas/gas_mask.png \
+  --demo --output-dir outputs/check/tracks
+python scripts/run.py render-tracks -- \
+  --tracks outputs/check/tracks/tracks.npy \
+  --output-dir outputs/check/tracking --write-mp4
+python scripts/run.py video -- \
+  --input-image examples/gas/input.png \
+  --tracking-video outputs/check/tracking/tracks_tracking.mp4 \
+  --checkpoint weights/das \
+  --output-dir outputs/check/video \
+  --prompt "A cloud of smoke drifts upward and to the left." \
+  --check-only
+```
+
+`--demo` uses synthetic motion to exercise projection and rendering.
+`--check-only` decodes the tracking video and checks its 49 frames, 24 fps and
+720 x 480 resolution without loading video weights.
+
+## Evaluate a model
+
+Use a matching checkpoint and configuration for model inference. The CPU
+checks above cover input and media interfaces; assessing prediction quality
+requires the simulation targets and evaluation commands described in
+[Data and Evaluation](DATA_AND_EVALUATION.md). Use the intended Linux/CUDA
+environment for training and full video generation.

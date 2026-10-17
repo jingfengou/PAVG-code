@@ -1,5 +1,5 @@
 {
-  "protocol_id": "PAVG-normalized32-scaled-conditions-20261011",
+  "protocol_id": "pavg-scene-video-v1",
   "scenes": [
     {
       "scene": "sandbag_drop",

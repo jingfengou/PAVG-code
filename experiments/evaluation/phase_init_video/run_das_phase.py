@@ -40,7 +40,7 @@ def main() -> None:
     import cv2
     from PIL import Image
     if args.fps != 24:
-        raise ValueError("The accepted 49-frame protocol uses 24 fps")
+        raise ValueError("The 49-frame video interface requires 24 fps")
     capture = cv2.VideoCapture(str(args.tracking_video))
     if not capture.isOpened():
         raise ValueError("Cannot open the tracking video")
@@ -109,7 +109,7 @@ def main() -> None:
         count += 1
     output_capture.release()
     if count != 49 or abs(result_fps - 24) > 1e-6:
-        raise RuntimeError("Generated video does not meet the accepted frame/time contract")
+        raise RuntimeError("Generated video does not meet the frame/time contract")
     (args.output_dir / "inference_protocol.json").write_text(
         json.dumps({"status": "complete", **record}, indent=2), encoding="utf-8")
 

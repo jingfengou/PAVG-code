@@ -1,4 +1,4 @@
-# External dependencies and provenance
+# Third-party dependencies
 
 The PhysCtrl development reference is
 [`803264f2901e9f14481ab366991976b517571178`](https://github.com/cwchenwang/physctrl/tree/803264f2901e9f14481ab366991976b517571178).
@@ -16,12 +16,12 @@ automatically downloads dependency files.
 Acquire the pinned dependency as shown in the [README](../README.md).
 The default location is `third_party/physctrl`; an existing matching checkout
 can be selected with `PAVG_PHYSCTRL_ROOT`. All required hashes are checked,
-including archive checkouts. A different Git commit or file hash stops loading.
+including source archives. A different Git commit or file hash stops loading.
 Original class names and checkpoint parameter names are preserved.
 
 PAVG changes include physical adapters, phase-specific branches, cross-phase
 attention, gas/interaction objectives, canonical data handling, evaluation,
-shared normalization and the accepted trajectory/video interface.
+shared normalization and the trajectory-to-video interface.
 
 DaS, CogVideoX and Diffusers retain their source/model terms and notices.
 The [original DaS project](https://github.com/IGL-HKUST/DiffusionAsShader) uses
@@ -29,6 +29,5 @@ Apache-2.0; this is not asserted as a blanket license for PhysCtrl or weights.
 No blanket MIT license is asserted for the composed runtime. Model weights
 and datasets are not bundled.
 
-The internal MantaFlow reference is `1f380bb004709a69918acdffa0864034be9954f0`;
-solver builds are not bundled. Input examples are project-generated inputs,
-not ground-truth simulations or redistributed upstream datasets.
+Input examples are project-generated images and initial conditions.
+Simulation targets and solver builds are not bundled.
