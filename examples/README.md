@@ -7,12 +7,12 @@ Each directory contains:
 - `input.png`: input image.
 - `gas_mask.png`, and `solid_mask.png` for the interaction example.
 - `phase_inputs.npz`: numeric initial points and projection metadata.
-- `condition_input.npz`: recorded numeric per-phase/per-point controls.
+- `condition_input.npz`: per-phase and per-point controls.
 
 These files demonstrate the image, point-cloud and condition interfaces.
 Simulation targets and model predictions are not included.
 
-For a weight-free interface smoke test:
+Preview the tracking format without model weights:
 
 ```bash
 python scripts/run.py project -- \

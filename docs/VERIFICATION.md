@@ -1,17 +1,12 @@
-# Verify your setup
+# Check your installation
 
 Run these checks from the repository root after installation.
 
-## Source and dependencies
+## Check dependencies
 
 ```bash
-python scripts/audit_release.py
 python scripts/check_dependencies.py
 ```
-
-The source audit checks Python syntax, machine-specific paths, credential
-patterns, generated artifacts and documentation links. The dependency check
-verifies the pinned PhysCtrl source and the PAVG extensions.
 
 ## Prepare an input on CPU
 
@@ -25,10 +20,8 @@ python scripts/run.py predict -- \
   --normalization joint --prepare-only
 ```
 
-This writes adapted model inputs and a JSON settings sidecar. In
-`--prepare-only` mode, the checkpoint argument is a placeholder; no weights
-are opened. Check that the two phase slots remain in `[gas, solid]` order and
-share one normalization transform.
+This writes prepared inputs to `outputs/check/prepared.npz`. The checkpoint
+argument is a placeholder in `--prepare-only` mode; weights are not opened.
 
 ## Check projection and tracking media
 
@@ -49,14 +42,5 @@ python scripts/run.py video -- \
   --check-only
 ```
 
-`--demo` uses synthetic motion to exercise projection and rendering.
-`--check-only` decodes the tracking video and checks its 49 frames, 24 fps and
-720 x 480 resolution without loading video weights.
-
-## Evaluate a model
-
-Use a matching checkpoint and configuration for model inference. The CPU
-checks above cover input and media interfaces; assessing prediction quality
-requires the simulation targets and evaluation commands described in
-[Data and Evaluation](DATA_AND_EVALUATION.md). Use the intended Linux/CUDA
-environment for training and full video generation.
+`--demo` creates example motion for previewing the tracking format.
+`--check-only` checks the tracking video without loading video weights.
