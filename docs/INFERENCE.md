@@ -25,7 +25,7 @@ Download the matching [PAVG weights](https://huggingface.co/irony2025/PAVG) from
 
 ```bash
 python scripts/run.py predict -- \
-  --config configs/stage2.yaml \
+  --config weights/pavg/configs/stage2.yaml \
   --checkpoint weights/pavg/model.safetensors \
   --phase-inputs outputs/custom/init/phase_inputs.npz \
   --solid-force 1 0 0 --solid-force-magnitude 1 \

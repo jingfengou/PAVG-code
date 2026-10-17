@@ -6,7 +6,8 @@ PAVG generates controllable videos using predicted 3D trajectories for solids,
 gas and solid-gas interactions.
 
 [Paper](https://arxiv.org/abs/2610.11791) ·
-[Project and videos](https://jingfengou.github.io/PAVG/)
+[Project and videos](https://jingfengou.github.io/PAVG/) ·
+[Pretrained models](https://huggingface.co/irony2025/PAVG)
 
 ## Installation
 
@@ -37,10 +38,15 @@ Download the [pretrained PAVG models](https://huggingface.co/irony2025/PAVG) int
 hf download irony2025/PAVG --local-dir weights/pavg
 ```
 
-For joint prediction, use `weights/pavg/model.safetensors` with
-`weights/pavg/configs/stage2.yaml`. The Stage 1 files are optional for
-joint inference and available for training initialization. DaS video
-weights are obtained separately from their authors.
+| Model file | Use |
+| --- | --- |
+| `model.safetensors` | Joint solid, gas and interaction trajectory prediction |
+| `stage1/solid/model.safetensors` | Solid trajectory prediction and Stage 2 training initialization |
+| `stage1/gas/model.safetensors` | Gas trajectory prediction and Stage 2 training initialization |
+
+Start with the joint model and `weights/pavg/configs/stage2.yaml` to run the
+example below. The Stage 1 downloads are optional for joint inference.
+Obtain the DaS video-generation weights separately from their authors.
 
 ## Dataset
 
@@ -58,7 +64,7 @@ Run the following commands from the repository root:
 ```bash
 # Predict 3D trajectories.
 python scripts/run.py predict -- \
-  --config configs/stage2.yaml \
+  --config weights/pavg/configs/stage2.yaml \
   --checkpoint weights/pavg/model.safetensors \
   --phase-inputs examples/interaction/phase_inputs.npz \
   --condition-input examples/interaction/condition_input.npz \
