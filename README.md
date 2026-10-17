@@ -1,15 +1,17 @@
-# PAVG
+<h1 align="center">PAVG: Phase-Aware Video Generation<br>for Physics-Grounded Dynamics and Interactions</h1>
 
-**Phase-Aware physics-grounded controllable Video Generator**
+<p align="center">
+  <a href="https://arxiv.org/abs/2610.11791"><img src="https://img.shields.io/badge/arXiv-Paper-b31b1b?logo=arxiv&amp;logoColor=white" alt="arXiv paper" height="22"></a>
+  <a href="https://jingfengou.github.io/PAVG/"><img src="https://img.shields.io/badge/Project_Page-Website-2f855a?logo=googlechrome&amp;logoColor=white" alt="Project page and videos" height="22"></a>
+  <a href="https://huggingface.co/irony2025/PAVG"><img src="https://img.shields.io/badge/Hugging_Face-Models-007ec6?logo=huggingface&amp;logoColor=FFD21E" alt="Hugging Face pretrained models" height="22"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache--2.0-6f42c1?logo=apache&amp;logoColor=white" alt="License: Apache 2.0" height="22"></a>
+</p>
 
-PAVG generates controllable videos using predicted 3D trajectories for solids,
-gas and solid-gas interactions.
+<p align="center">Controllable video generation with predicted 3D trajectories for solids, gas and solid–gas interactions.</p>
 
-[Paper](https://arxiv.org/abs/2610.11791) ·
-[Project and videos](https://jingfengou.github.io/PAVG/) ·
-[Pretrained models](https://huggingface.co/irony2025/PAVG)
+<a name="installation"></a>
 
-## Installation
+## 📦 Installation
 
 Use Python 3.10 on Linux with an NVIDIA GPU. Install PyTorch 2.5.1 and
 torchvision 0.20.1 for your CUDA version, then install the dependencies:
@@ -30,7 +32,9 @@ python scripts/check_dependencies.py
 To use an existing checkout of this version, set `PAVG_PHYSCTRL_ROOT` to its
 directory.
 
-## Pretrained Models
+<a name="pretrained-models"></a>
+
+## 🤖 Pretrained Models
 
 Download the [pretrained PAVG models](https://huggingface.co/irony2025/PAVG) into `weights/pavg/`:
 
@@ -48,7 +52,9 @@ Start with the joint model and `weights/pavg/configs/stage2.yaml` to run the
 example below. The Stage 1 downloads are optional for joint inference.
 Obtain the DaS video-generation weights separately from their authors.
 
-## Dataset
+<a name="dataset"></a>
+
+## 📂 Dataset
 
 Prepare HDF5 samples and JSON path lists for solid, gas and solid-gas data.
 See [Dataset setup](docs/DATASET.md) for file layout and formats.
@@ -57,7 +63,9 @@ Public dataset downloads are not available yet.
 The `examples/` directory contains image, mask and initial-condition inputs
 for a gas scene and a solid-gas scene.
 
-## Image to Video Generation
+<a name="image-to-video-generation"></a>
+
+## 🎬 Image to Video Generation
 
 Run the following commands from the repository root:
 
@@ -95,7 +103,9 @@ For custom images and motion controls, see [Inference](docs/INFERENCE.md).
 To try input preparation and tracking rendering without weights, see
 [Check your installation](docs/VERIFICATION.md).
 
-## Training and Evaluation
+<a name="training-and-evaluation"></a>
+
+## 🚀 Training and Evaluation
 
 ### Prepare configs
 
@@ -143,15 +153,19 @@ python scripts/run.py eval-stage2 -- \
 Set `--end-index` to the number of samples to evaluate. Results are written
 to `--output`; `--save-predictions` also saves the predicted trajectories.
 
-## Citation and Acknowledgments
+<a name="citation-and-acknowledgments"></a>
 
-The manuscript is [PAVG: Phase-Aware physics-grounded controllable Video
-Generator](https://arxiv.org/abs/2610.11791).
+## 📚 Citation and Acknowledgments
+
+The manuscript is [Phase-Aware Video Generation for Physics-Grounded Dynamics
+and Interactions](https://arxiv.org/abs/2610.11791).
 
 This implementation builds on PhysCtrl, Diffusion as Shader, CogVideoX and
 Diffusers. See [third-party dependencies](docs/THIRD_PARTY.md) for attribution.
 
-## License
+<a name="license"></a>
+
+## 📄 License
 
 PAVG's original source code is licensed under the
 [Apache License 2.0](LICENSE). The PAVG trajectory checkpoints on
