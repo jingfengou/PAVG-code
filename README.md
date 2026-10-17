@@ -150,3 +150,11 @@ Generator](https://arxiv.org/abs/2610.11791).
 
 This implementation builds on PhysCtrl, Diffusion as Shader, CogVideoX and
 Diffusers. See [third-party dependencies](docs/THIRD_PARTY.md) for attribution.
+
+## License
+
+PAVG's original source code is licensed under the
+[Apache License 2.0](LICENSE). The PAVG trajectory checkpoints on
+[Hugging Face](https://huggingface.co/irony2025/PAVG) use the same license.
+Third-party code and model weights retain their respective terms; see
+[third-party dependencies](docs/THIRD_PARTY.md).
