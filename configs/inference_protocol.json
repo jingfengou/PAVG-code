@@ -58,5 +58,7 @@
     ],
     "tracking_vae_rng_seeded": true
   },
-  "weights_publicly_released": false
+  "weights_publicly_released": true,
+  "weights_repository": "https://huggingface.co/irony2025/PAVG",
+  "weights_revision": "14a6fb719c4efa81afb5732107401cd0eefffc6e"
 }

@@ -21,6 +21,8 @@ clouds and projection information.
 
 ## Predict trajectories
 
+Download the matching [PAVG weights](https://huggingface.co/irony2025/PAVG) from Hugging Face.
+
 ```bash
 python scripts/run.py predict -- \
   --config configs/stage2.yaml \

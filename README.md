@@ -31,13 +31,16 @@ directory.
 
 ## Pretrained Models
 
-Public checkpoint downloads are not available yet. Place your PAVG checkpoint
-at `weights/pavg/model.safetensors`, or pass its path with `--checkpoint`.
-Use the matching model config with `--config`.
+Download the [pretrained PAVG models](https://huggingface.co/irony2025/PAVG) into `weights/pavg/`:
 
-Video generation also requires DaS weights, obtained separately from the
-[DaS project](https://github.com/IGL-HKUST/DiffusionAsShader). Place them in
-`weights/das/`.
+```bash
+hf download irony2025/PAVG --local-dir weights/pavg
+```
+
+For joint prediction, use `weights/pavg/model.safetensors` with
+`weights/pavg/configs/stage2.yaml`. The Stage 1 files are optional for
+joint inference and available for training initialization. DaS video
+weights are obtained separately from their authors.
 
 ## Dataset
 
