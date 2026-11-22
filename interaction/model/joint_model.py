@@ -13,13 +13,7 @@ def _zero_initialize(module: nn.Module) -> None:
 
 
 class JointMDM_ST(nn.Module):
-    """Two pretrained PhysCtrl branches with object-to-gas DiT interaction.
-
-    The gas and object branches retain the exact parameterized components of a
-    single-stream PhysCtrl ``MDM_ST``: point encoder, four condition encoders,
-    and the complete DiT. New physical-field adapters are zero initialized, and
-    every in-block cross-attention path starts behind a zero residual gate.
-    """
+    """Phase-conditioned trajectory predictor with configurable trunks and CPI."""
 
     _SOURCE_ENCODER_MAP = {
         "input_encoder.": "{branch}_input_encoder.",
@@ -34,6 +28,9 @@ class JointMDM_ST(nn.Module):
         "coeff_adapter.": "{branch}_coeff_adapter.",
         "material_adapter.": "{branch}_material_adapter.",
         "volume_adapter.": "{branch}_volume_adapter.",
+        "gravity_embedding.": "{branch}_gravity_embedding.",
+        "floor_encoder.": "{branch}_floor_encoder.",
+        "class_embedding.": "{branch}_class_embedding.",
         "dit.": "dual_dit.{branch}_dit.",
     }
 
@@ -50,6 +47,14 @@ class JointMDM_ST(nn.Module):
         self.physics_condition_enabled = bool(model_config.get("physics_condition", True))
         self.physics_num_materials = int(model_config.get("physics_num_materials", 5))
         self.backbone_mode = str(model_config.get("backbone_mode", "separate"))
+        self.conditioning = {
+            branch: str(model_config.get(f"{branch}_conditioning", "legacy"))
+            for branch in ("gas", "object")
+        }
+        if set(self.conditioning.values()) - {"legacy", "large"}:
+            raise ValueError(f"Unknown condition layout: {self.conditioning}")
+        if self.backbone_mode == "shared" and len(set(self.conditioning.values())) != 1:
+            raise ValueError("A shared unified model requires the same condition layout")
         self.cross_attention_enabled = bool(
             model_config.get("dit_cross_attention", True)
         )
@@ -89,6 +94,24 @@ class JointMDM_ST(nn.Module):
         # trainable zero-init adapters so step zero reproduces the two source
         # branches while training can learn to use the richer composite data.
         for branch in ("gas", "object"):
+            if self.conditioning[branch] == "large":
+                setattr(self, f"{branch}_gravity_embedding", nn.Embedding(2, self.latent_dim))
+                setattr(self, f"{branch}_floor_encoder", nn.Linear(1, self.latent_dim))
+                classes = self.physics_num_materials if self.backbone_mode == "shared" else 4
+                setattr(self, f"{branch}_class_embedding", nn.Embedding(classes, self.latent_dim))
+                nn.init.normal_(
+                    getattr(self, f"{branch}_gravity_embedding").weight, mean=0.0, std=0.1
+                )
+                if branch == "object":
+                    continue
+                # Unified gas retains its pointwise initial-state information.
+                for suffix, inputs in (
+                    ("velocity_adapter", 3), ("mask_adapter", 1), ("volume_adapter", 1)
+                ):
+                    module = nn.Linear(inputs, self.latent_dim)
+                    _zero_initialize(module)
+                    setattr(self, f"{branch}_{suffix}", module)
+                continue
             setattr(self, f"{branch}_velocity_adapter", nn.Linear(3, self.latent_dim))
             setattr(self, f"{branch}_mask_adapter", nn.Linear(1, self.latent_dim))
             setattr(self, f"{branch}_gravity_adapter", nn.Embedding(2, self.latent_dim))
@@ -111,10 +134,9 @@ class JointMDM_ST(nn.Module):
             ):
                 _zero_initialize(getattr(self, f"{branch}_{suffix}"))
 
-        # Both pretrained models use force_as_token=false, yielding the exact
-        # token order [force, E, nu, drag_point]. Extra scalar conditions are
-        # zero-init residuals on these four tokens, not extra sequence entries.
-        self.cond_seq_length = 4
+        # The checkpoint layout fixes the condition sequence on each trunk.
+        self.cond_seq_length = 7 if self.conditioning["gas"] == "large" else 4
+        self.object_cond_seq_length = 7 if self.conditioning["object"] == "large" else 4
         self.dual_dit = DualTransformer(
             sample_points=self.point_num,
             sample_frames=self.frame_num + self.cond_frame,
@@ -123,9 +145,14 @@ class JointMDM_ST(nn.Module):
             num_attention_heads=self.latent_dim // 64,
             time_embed_dim=self.latent_dim,
             cond_seq_length=self.cond_seq_length,
+            object_cond_seq_length=self.object_cond_seq_length,
             cond_seq_length_t=self.cond_frame,
             transformer_block=str(model_config.transformer_block),
-            num_classes=0,
+            num_classes=self.physics_num_materials if self.conditioning["gas"] == "large" else 0,
+            object_num_classes=(
+                (self.physics_num_materials if self.backbone_mode == "shared" else 4)
+                if self.conditioning["object"] == "large" else 0
+            ),
             cross_attention_heads=int(
                 model_config.get("dit_cross_attention_heads", self.latent_dim // 64)
             ),
@@ -139,11 +166,17 @@ class JointMDM_ST(nn.Module):
             cross_attention_enabled=self.cross_attention_enabled,
             backbone_mode=self.backbone_mode,
             stop_gradient_object_context=self.stop_gradient_object_context,
+            joint_point_attention=bool(model_config.get("joint_point_attention", False)),
+            independent_phase_forward=bool(model_config.get("independent_phase_forward", False)),
         )
 
         if self.backbone_mode == "shared":
             if self.dual_dit.gas_dit is not self.dual_dit.object_dit:
                 raise RuntimeError("Shared backbone mode did not alias the two DiT trunks")
+        if bool(model_config.get("joint_point_attention", False)):
+            for name, module in list(self.named_children()):
+                if name.startswith("gas_"):
+                    setattr(self, "object_" + name[4:], module)
 
     def enable_gradient_checkpointing(self) -> None:
         self.dual_dit.enable_gradient_checkpointing()
@@ -156,6 +189,7 @@ class JointMDM_ST(nn.Module):
     @classmethod
     def _target_key(cls, source_key: str, branch: str) -> str | None:
         source_key = source_key.removeprefix("module.")
+        source_key = source_key.removeprefix("solid.")
         for source_prefix, target_pattern in cls._SOURCE_ENCODER_MAP.items():
             if source_key.startswith(source_prefix):
                 return target_pattern.format(branch=branch) + source_key[len(source_prefix) :]
@@ -262,6 +296,24 @@ class JointMDM_ST(nn.Module):
         physics_gravity: torch.Tensor,
         physics_coeff: torch.Tensor,
     ) -> torch.Tensor:
+        if self.conditioning[branch] == "large":
+            material = physics_mat_type.long()
+            gravity = getattr(self, f"{branch}_gravity_embedding")(physics_gravity.long())
+            if branch == "gas":
+                # Gas has no elastic modulus or Poisson ratio; these are already
+                # normalized model inputs, rather than raw values passed to log10.
+                physics_E = torch.zeros_like(physics_E)
+                physics_nu = torch.zeros_like(physics_nu)
+                material = torch.full_like(material, 4)
+            return torch.stack([
+                getattr(self, f"{branch}_E_cond_encoder")(physics_E),
+                getattr(self, f"{branch}_nu_cond_encoder")(physics_nu),
+                getattr(self, f"{branch}_force_cond_encoder")(force) + gravity,
+                getattr(self, f"{branch}_drag_point_encoder")(drag_point),
+                gravity,
+                getattr(self, f"{branch}_class_embedding")(material),
+                getattr(self, f"{branch}_floor_encoder")(physics_floor_height),
+            ], dim=1)
         force_token = getattr(self, f"{branch}_force_cond_encoder")(force)
         E_token = getattr(self, f"{branch}_E_cond_encoder")(physics_E)
         nu_token = getattr(self, f"{branch}_nu_cond_encoder")(physics_nu)
@@ -294,7 +346,7 @@ class JointMDM_ST(nn.Module):
         hidden = getattr(self, f"{branch}_input_encoder")(
             noisy.reshape(batch * frames, points, channels)
         ).reshape(batch, frames, points, self.latent_dim)
-        if self.physics_condition_enabled:
+        if self.physics_condition_enabled and hasattr(self, f"{branch}_velocity_adapter"):
             hidden = hidden + getattr(self, f"{branch}_velocity_adapter")(init_vel)[:, None]
             hidden = hidden + getattr(self, f"{branch}_mask_adapter")(drag_mask)[:, None]
             hidden = hidden + getattr(self, f"{branch}_volume_adapter")(
@@ -332,7 +384,7 @@ class JointMDM_ST(nn.Module):
                     f"phase_presence must have shape [{batch},2], "
                     f"got {tuple(phase_presence.shape)}"
                 )
-            phase_presence = phase_presence.to(device=x.device, dtype=torch.bool)
+            phase_presence = phase_presence.to(dtype=torch.bool)
         if init_pc.shape != (batch, 2, points, channels):
             raise ValueError("init_pc must have shape [B,2,N,3]")
         if init_vel.shape != init_pc.shape:
@@ -351,35 +403,61 @@ class JointMDM_ST(nn.Module):
         if missing:
             raise ValueError("Missing joint physical fields: " + ", ".join(missing))
 
-        gas_condition = self._condition_tokens(
-            "gas",
-            force[:, 0],
-            drag_point[:, 0],
-            physics_E[:, 0],
-            physics_nu[:, 0],
-            physics_mat_type[:, 0],
-            physics_floor_height[:, 0],
-            physics_gravity[:, 0],
-            physics_coeff[:, 0],
-        )
-        object_condition = self._condition_tokens(
-            "object",
-            force[:, 1],
-            drag_point[:, 1],
-            physics_E[:, 1],
-            physics_nu[:, 1],
-            physics_mat_type[:, 1],
-            physics_floor_height[:, 1],
-            physics_gravity[:, 1],
-            physics_coeff[:, 1],
-        )
-        if null_emb is not None:
-            if null_emb.shape[0] != batch:
-                raise ValueError(
-                    f"null_emb batch must be {batch}, got {tuple(null_emb.shape)}"
+        if null_emb is not None and null_emb.shape[0] != batch:
+            raise ValueError(
+                f"null_emb batch must be {batch}, got {tuple(null_emb.shape)}"
+            )
+
+        def encode_condition(branch, slot):
+            condition = self._condition_tokens(
+                branch, force[:, slot], drag_point[:, slot], physics_E[:, slot],
+                physics_nu[:, slot], physics_mat_type[:, slot],
+                physics_floor_height[:, slot], physics_gravity[:, slot],
+                physics_coeff[:, slot],
+            )
+            return condition if null_emb is None else condition * null_emb
+
+        if (
+            phase_presence is not None and batch > 0
+            and self.backbone_mode == "separate"
+            and not self.training and not torch.is_grad_enabled()
+        ):
+            gas_count, object_count = phase_presence.sum(dim=0).tolist()
+            # Keep batch shapes intact for interaction and mixed-phase batches.
+            slot = None
+            if gas_count == batch and object_count == 0:
+                slot = 0
+            elif object_count == batch and gas_count == 0:
+                slot = 1
+            if slot is not None:
+                branch = ("gas", "object")[slot]
+                condition = encode_condition(branch, slot)
+                hidden = self._encode_branch(
+                    branch, x[:, :, slot], init_pc[:, slot], init_vel[:, slot],
+                    drag_mask[:, slot], physics_volume[:, slot],
                 )
-            gas_condition = gas_condition * null_emb
-            object_condition = object_condition * null_emb
+                material = None
+                if self.conditioning[branch] == "large":
+                    material = physics_mat_type[:, slot]
+                    if branch == "gas":
+                        material = torch.full_like(material, 4)
+                output = self.dual_dit.forward_single_phase(
+                    branch, hidden, condition, timesteps, material,
+                ).reshape(batch, -1, points, 3)[:, self.cond_frame :]
+                if output.shape[1] != frames:
+                    raise RuntimeError(
+                        f"Unexpected {branch} output frames {output.shape[1]} expected={frames}"
+                    )
+                if self.pred_offset:
+                    output = output + init_pc[:, slot].unsqueeze(1)
+                absent = torch.zeros_like(output)
+                streams = (output, absent) if slot == 0 else (absent, output)
+                return torch.stack(streams, dim=2)
+
+        if phase_presence is not None:
+            phase_presence = phase_presence.to(device=x.device)
+        gas_condition = encode_condition("gas", 0)
+        object_condition = encode_condition("object", 1)
 
         gas_hidden = self._encode_branch(
             "gas",
@@ -404,6 +482,13 @@ class JointMDM_ST(nn.Module):
             object_condition,
             timesteps,
             phase_presence=phase_presence,
+            gas_material=(
+                torch.full_like(physics_mat_type[:, 0], 4)
+                if self.conditioning["gas"] == "large" else None
+            ),
+            object_material=(
+                physics_mat_type[:, 1] if self.conditioning["object"] == "large" else None
+            ),
         )
         gas_output = gas_output.reshape(batch, -1, points, 3)[:, self.cond_frame :]
         object_output = object_output.reshape(batch, -1, points, 3)[:, self.cond_frame :]

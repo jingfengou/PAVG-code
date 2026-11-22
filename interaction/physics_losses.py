@@ -14,6 +14,8 @@ class DeformLoss(torch.nn.Module):
         grid_lim: float = 10.0,
         density: float = 1000.0,
         frame_dt: float = 0.0417,
+        flat_grid_storage: bool = False,
+        skip_unused_stencil_terms: bool = False,
     ):
         super().__init__()
         self.num_points = int(num_points)
@@ -23,6 +25,8 @@ class DeformLoss(torch.nn.Module):
         self.inv_dx = 1.0 / self.dx
         self.density = float(density)
         self.frame_dt = float(frame_dt)
+        self.flat_grid_storage = bool(flat_grid_storage)
+        self.skip_unused_stencil_terms = bool(skip_unused_stencil_terms)
         self.register_buffer("identity", torch.eye(3).unsqueeze(0).repeat(self.num_points, 1, 1))
 
     def forward(
@@ -81,14 +85,10 @@ class DeformLoss(torch.nn.Module):
             * vol.unsqueeze(1).expand(-1, time_count, -1).reshape(merged, self.num_points)
         ).unsqueeze(-1).expand(-1, -1, 3)
 
-        grid_m = torch.zeros(
-            merged, self.grid_size, self.grid_size, self.grid_size,
-            device=device, dtype=x.dtype,
-        )
-        grid_v = torch.zeros(
-            merged, self.grid_size, self.grid_size, self.grid_size, 3,
-            device=device, dtype=x.dtype,
-        )
+        grid_shape = ((merged, self.grid_size**3) if self.flat_grid_storage else
+                      (merged, self.grid_size, self.grid_size, self.grid_size))
+        grid_m = torch.zeros(grid_shape, device=device, dtype=x.dtype)
+        grid_v = torch.zeros((*grid_shape, 3), device=device, dtype=x.dtype)
 
         # Keep the 3x3x3 stencil inside the finite MPM grid. The learned
         # trajectory can briefly leave the normalized simulation domain early
@@ -130,20 +130,21 @@ class DeformLoss(torch.nn.Module):
                         * weights[:, :, 1, j]
                         * weights[:, :, 2, k]
                     )
-                    dweight = torch.stack(
-                        [
-                            gradients[:, :, 0, i]
-                            * weights[:, :, 1, j]
-                            * weights[:, :, 2, k],
-                            weights[:, :, 0, i]
-                            * gradients[:, :, 1, j]
-                            * weights[:, :, 2, k],
-                            weights[:, :, 0, i]
-                            * weights[:, :, 1, j]
-                            * gradients[:, :, 2, k],
-                        ],
-                        dim=2,
-                    ) * self.inv_dx
+                    if not self.skip_unused_stencil_terms:
+                        dweight = torch.stack(
+                            [
+                                gradients[:, :, 0, i]
+                                * weights[:, :, 1, j]
+                                * weights[:, :, 2, k],
+                                weights[:, :, 0, i]
+                                * gradients[:, :, 1, j]
+                                * weights[:, :, 2, k],
+                                weights[:, :, 0, i]
+                                * weights[:, :, 1, j]
+                                * gradients[:, :, 2, k],
+                            ],
+                            dim=2,
+                        ) * self.inv_dx
                     incoming = weight.unsqueeze(-1) * particle_mass * (
                         particle_v
                         + (particle_c @ dpos.unsqueeze(-1)).squeeze(-1)
@@ -153,11 +154,13 @@ class DeformLoss(torch.nn.Module):
                         + iy * self.grid_size
                         + iz
                     ).long()
-                    flat_grid_v = grid_v.reshape(merged, -1, 3)
+                    flat_grid_v = (grid_v if self.flat_grid_storage else
+                                   grid_v.reshape(merged, -1, 3))
                     flat_grid_v.scatter_add_(
                         1, flat.unsqueeze(-1).expand(-1, -1, 3), incoming
                     )
-                    flat_grid_m = grid_m.reshape(merged, -1)
+                    flat_grid_m = (grid_m if self.flat_grid_storage else
+                                   grid_m.reshape(merged, -1))
                     flat_grid_m.scatter_add_(1, flat, weight * particle_mass[:, :, 0])
 
         grid_m = torch.where(grid_m > 1.0e-15, grid_m, torch.ones_like(grid_m))
@@ -170,11 +173,12 @@ class DeformLoss(torch.nn.Module):
                     ix = base_pos[:, :, 0] + i
                     iy = base_pos[:, :, 1] + j
                     iz = base_pos[:, :, 2] + k
-                    weight = (
-                        weights[:, :, 0, i]
-                        * weights[:, :, 1, j]
-                        * weights[:, :, 2, k]
-                    )
+                    if not self.skip_unused_stencil_terms:
+                        weight = (
+                            weights[:, :, 0, i]
+                            * weights[:, :, 1, j]
+                            * weights[:, :, 2, k]
+                        )
                     dweight = torch.stack(
                         [
                             gradients[:, :, 0, i]

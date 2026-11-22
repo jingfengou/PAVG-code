@@ -48,6 +48,7 @@ class JointTrajPipeline:
         n_frames: int = 24,
         num_inference_steps: int = 25,
         guidance_scale: float = 1.0,
+        initial_noise: torch.Tensor | None = None,
     ) -> torch.Tensor:
         device = torch.device(device)
         init_pc = init_pc.to(device)
@@ -79,7 +80,11 @@ class JointTrajPipeline:
         dtype = init_pc.dtype
         active_sample = phase_presence[:, None, :, None, None]
         noise_shape = (batch_size, n_frames, 2, point_num, 3)
-        if generator is None:
+        if initial_noise is not None:
+            if initial_noise.shape != noise_shape:
+                raise ValueError("Initial noise must match the trajectory tensor")
+            sample = initial_noise.to(device=device, dtype=dtype)
+        elif generator is None:
             sample = torch.randn(noise_shape, device=device, dtype=dtype)
         else:
             generator_device = str(getattr(generator, "device", "cpu"))
