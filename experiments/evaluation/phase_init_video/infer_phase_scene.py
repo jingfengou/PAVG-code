@@ -7,6 +7,7 @@ import datetime as dt
 import hashlib
 import importlib.util
 import json
+import shutil
 import sys
 import subprocess
 import time
@@ -140,6 +141,7 @@ def main() -> None:
     parser.add_argument("--guidance-scale", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--attention-backend", choices=("default", "math"), default="default")
     parser.add_argument("--normalization", choices=["joint", "none"], default="joint",
                         help="Shared bounding-box adaptation; none selects the legacy interface.")
     parser.add_argument("--interaction", choices=["on", "off"], default="on")
@@ -256,9 +258,12 @@ def main() -> None:
         "normalization_source_sha256": hashlib.sha256(
             Path(__file__).with_name("joint_normalization.py").read_bytes()).hexdigest(),
     }
-    commit_query = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"],
-                                  capture_output=True, text=True)
-    preparation["code_commit"] = commit_query.stdout.strip() if commit_query.returncode == 0 else None
+    preparation["code_commit"] = None
+    if (ROOT / ".git").exists() and shutil.which("git"):
+        commit_query = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"],
+                                      capture_output=True, text=True)
+        if commit_query.returncode == 0:
+            preparation["code_commit"] = commit_query.stdout.strip()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     if args.prepare_only:
         np.savez_compressed(args.output, **adapted, original_init_pc=original_points,
@@ -272,7 +277,7 @@ def main() -> None:
     import torch
     from diffusers import DDIMScheduler
     from omegaconf import OmegaConf
-    from safetensors.torch import load_file
+    from safetensors.torch import load_model
     from model.joint_pipeline import JointTrajPipeline
 
     cfg = OmegaConf.load(args.config)
@@ -290,10 +295,19 @@ def main() -> None:
     model = model_mod.JointMDM_ST(
         int(cfg.pc_size), int(cfg.n_training_frames), cfg.model_config, mdm_model
     )
-    model.load_state_dict(load_file(str(checkpoint), device="cpu"), strict=True)
-    model.set_cross_attention_enabled(args.interaction == "on")
+    load_model(model, str(checkpoint), strict=True, device="cpu")
+    cpi = bool(cfg.model_config.get("dit_cross_attention", True)) and args.interaction == "on"
+    model.set_cross_attention_enabled(cpi)
+    preparation["cross_attention_enabled"] = cpi
 
     device = torch.device(args.device)
+    if args.attention_backend == "math" and device.type == "cuda":
+        torch.backends.cuda.enable_flash_sdp(False)
+        torch.backends.cuda.enable_mem_efficient_sdp(False)
+        torch.backends.cuda.enable_math_sdp(True)
+        if hasattr(torch.backends.cuda, "enable_cudnn_sdp"):
+            torch.backends.cuda.enable_cudnn_sdp(False)
+    preparation["attention_backend"] = args.attention_backend
     tensor = lambda value: torch.from_numpy(value).unsqueeze(0).to(device)
     pipeline = JointTrajPipeline(
         model,
@@ -305,6 +319,7 @@ def main() -> None:
     )
     autocast_enabled = device.type == "cuda"
     if autocast_enabled:
+        torch.cuda.init()
         torch.cuda.reset_peak_memory_stats(device)
     started = time.perf_counter()
     with torch.inference_mode(), torch.autocast(
@@ -312,26 +327,33 @@ def main() -> None:
         dtype=torch.bfloat16,
         enabled=autocast_enabled,
     ):
-        prediction = pipeline(
-            tensor(points_src),
-            tensor(model_conditions["init_vel"]),
-            tensor(model_conditions["force"]),
-            tensor(model_conditions["drag_point"]),
-            tensor(model_conditions["drag_mask"]),
-            tensor(model_conditions["physics_E"]),
-            tensor(model_conditions["physics_nu"]),
-            tensor(model_conditions["physics_mat_type"]),
-            tensor(model_conditions["physics_floor_height"]),
-            tensor(model_conditions["physics_gravity"]),
-            tensor(model_conditions["physics_coeff"]),
-            tensor(model_conditions["physics_volume"]),
-            tensor(phase_presence),
-            device=device,
-            generator=torch.Generator(device="cpu").manual_seed(args.seed),
-            n_frames=int(cfg.n_training_frames),
-            num_inference_steps=args.num_inference_steps,
-            guidance_scale=args.guidance_scale,
-        )
+        slots = np.flatnonzero(phase_presence).tolist()
+        independent = bool(cfg.model_config.get("independent_phase_forward", False))
+        calls = [[slot] for slot in slots] if independent else [slots]
+        prediction = torch.zeros((1, int(cfg.n_training_frames), 2, point_size, 3), device=device)
+        for active_slots in calls:
+            active = np.zeros(2, dtype=bool)
+            active[active_slots] = True
+            initial = points_src.copy()
+            initial[~active] = 0
+            fields = {key: value.copy() for key, value in model_conditions.items()}
+            _mask_inactive_conditions(active, fields)
+            generator = torch.Generator(device="cpu").manual_seed(args.seed)
+            initial_noise = None
+            if independent:
+                initial_noise = torch.zeros(prediction.shape, device="cpu")
+                initial_noise[:, :, active_slots[0]] = torch.randn(
+                    (1, int(cfg.n_training_frames), point_size, 3), generator=generator
+                )
+            sampled = pipeline(
+                tensor(initial), **{key: tensor(value) for key, value in fields.items()},
+                phase_presence=tensor(active), device=device, generator=generator,
+                n_frames=int(cfg.n_training_frames), num_inference_steps=args.num_inference_steps,
+                guidance_scale=args.guidance_scale, initial_noise=initial_noise,
+            )
+            for slot in active_slots:
+                prediction[:, :, slot] = sampled[:, :, slot]
+        preparation["phase_calls"] = calls
     elapsed_seconds = time.perf_counter() - started
     prediction_np = prediction[0].float().cpu().numpy()
     if not bool(np.isfinite(prediction_np).all()):

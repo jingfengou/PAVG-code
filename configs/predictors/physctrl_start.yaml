@@ -1,0 +1,152 @@
+run_label: physctrl
+protocol_variant: phase_trajectory
+seed: 20260820
+mdm_root: src
+dataset_root: datasets
+train_list: manifests/prepared/shared_catalog.json
+val_list: manifests/combined_val_paths.json
+test_list: manifests/combined_test_paths.json
+protocol_lock_path: null
+object_metadata_sidecar: metadata/composite_object_physics_full.h5
+require_phase_presence: true
+output_dir: runs/physctrl
+initialization:
+  mode: random
+train_batch_size: 2
+eval_batch_size: 1
+gradient_accumulation_steps: 1
+max_train_steps: 188458
+learning_rate: 0.0001
+lr_warmup_steps: 100
+weight_decay: 0.01
+max_grad_norm: 1.0
+mixed_precision: bf16
+gradient_checkpointing: true
+num_workers: 2
+prefetch_factor: 2
+checkpointing_steps: 1250
+checkpoints_total_limit: 8
+eval_steps: 5000
+eval_max_batches: 700
+logging_steps: 10
+pc_size: 2048
+n_training_frames: 24
+n_frames_interval: 2
+physics_frame_dt: 0.0417
+deform_prediction_clip: 2.2
+norm_fac: 5.0
+context_dim: 32
+lambda_xyz: 1.0
+lambda_vel: 1.0
+lambda_deform: 0.001
+lambda_floor: 1.0
+lambda_gas_divergence: 0.05
+lambda_transfer: 0.0
+lambda_gas_advection: 0.0
+lambda_coupling: 0.0
+coupling_min_magnitude: 1.0e-05
+coupling_target_scale: 0.0
+coupling_scale_min: 0.0001
+coupling_huber_beta: 1.0
+gas_advection_scale_min: 0.0001
+gas_divergence_max_centers: 256
+gas_divergence_num_neighbors: 8
+gas_divergence_regularization: 0.001
+gas_divergence_scale_min: 1.0
+gas_divergence_residual_clip: 20.0
+gas_divergence_huber_beta: 1.0
+gas_weight: 1.0
+object_weight: 1.0
+model_config:
+  n_layers: 8
+  latent_dim: 256
+  frame_cond: true
+  pred_offset: true
+  transformer_block: SpatialTemporalTransformerBlock
+  context_dim: 32
+  physics_condition: true
+  physics_num_materials: 5
+  backbone_mode: shared
+  dit_cross_attention: false
+  dit_cross_attention_direction: object_to_gas
+  dit_cross_attention_spatial: true
+  dit_cross_attention_temporal: true
+  dit_cross_attention_heads: 4
+  coupling_head: false
+  stop_gradient_object_context: false
+  joint_point_attention: true
+  gas_conditioning: large
+  object_conditioning: large
+  independent_phase_forward: true
+composite_protocol: physctrl_composite_v2_canonical
+position_scale: 1.0
+velocity_scale: 1.0
+gas_force_scale: 1.0
+legacy_position_scale: 10.0
+legacy_velocity_scale: 10.0
+legacy_gas_force_scale: 0.1
+object_force_scale: 1.0
+gravity_override: 0
+object_physics_mode: required
+object_metadata_root: ''
+object_E_is_log10: false
+max_num_forces: 1
+aoss_enabled: false
+aoss_config_path: ''
+aoss_cache_dir: cache/trajectory
+aoss_cache_max_bytes: 53687091200
+aoss_cache_max_files: 32
+aoss_cache_batches: 0
+aoss_cache_batch_size: 1
+allow_coupling_supervision_without_cpi: false
+flat_deform_grid: true
+samplewise_loss_reduction: true
+validation_accuracy:
+  seed: 20260804
+  ddim_steps: 25
+  first_step: 100
+  expected_groups:
+    solid: 500
+    gas: 100
+    interaction: 100
+  selection: Overall vIoU max, CD min, Corr min
+  overall_weights:
+    solid: 0.25
+    gas: 0.25
+    interaction: 0.5
+eval_num_workers: 0
+skip_unused_stencil_terms: true
+exposure_plan:
+  mode: split_phase
+  path: manifests/prepared/split_plan.npy
+  sha256: 28ed69824fb30f784f71bef07f20d5c4e9d2543ecfdea08247d99f530ce40e6d
+  parent_path: manifests/prepared/parent_plan.npy
+  parent_sha256: cac7f0a8256c48f04355234e752934844df51eb7a059ad6276e363002f7d8387
+  expected_parent_counts:
+  - 1920000
+  - 1920000
+  - 1920000
+  expected_counts:
+  - 1920000
+  - 1920000
+  - 2190634
+  expected_phase_counts:
+  - 2461340
+  - 3569294
+  phase_weights:
+  - 1.225071302623774
+  - 0.8447936762844417
+  phase_order:
+  - gas
+  - solid
+  replacement_seed: 20260924
+  world_size: 16
+  global_batch: 32
+  ordering_seed: 20261115
+  real_samples: 6030634
+  zero_loss_fillers: 22
+  source_names:
+  - solid_stage1
+  - gas_stage1
+  - stage2
+diagnostic_stop_step: 2500

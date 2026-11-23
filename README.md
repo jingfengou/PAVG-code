@@ -9,6 +9,11 @@
 
 <p align="center">Controllable video generation with predicted 3D trajectories for solids, gas and solid–gas interactions.</p>
 
+The revised predictor uses bidirectional CPI and a seven-token solid prior.
+Training, independent PhysCtrl comparisons, and scene inference are documented in
+the [predictor runbook](docs/PREDICTORS.md). The hosted weights below use the
+earlier four-token, solid-to-gas configuration.
+
 <a name="installation"></a>
 
 ## 📦 Installation

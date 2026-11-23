@@ -643,7 +643,7 @@ class ObjectGasDataset(Dataset):
         # The training DataLoader performs its own epoch-wise shuffle. Keep
         # validation and test manifests in lock-file order so a fixed seed
         # maps to the same sample and prediction on every evaluation.
-        if split == "train":
+        if split == "train" and not cfg.get("exposure_plan"):
             random.Random(self.seed).shuffle(self.files)
         print(f"ObjectGasDataset[{split}]: {len(self.files)} files")
 

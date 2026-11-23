@@ -14,6 +14,7 @@ COMMANDS = {
     "train-stage2": "interaction/train_interaction.py",
     "eval-stage1": "experiments/evaluation/stage1/eval_fixed_single_phase.py",
     "eval-stage2": "experiments/evaluation/evaluate_dual_joint_fixed_batched_20260909.py",
+    "eval-split": "interaction/evaluate_split_test.py",
     "merge-stage2": "experiments/evaluation/merge_stage2_shards.py",
     "infer-sample": "interaction/inference_interaction.py",
     "initialize": "experiments/evaluation/phase_init_video/initialize_phase_points.py",

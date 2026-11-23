@@ -13,6 +13,10 @@ import torch
 import torch.nn as nn
 
 
+def gated_residual(hidden, gate, branch):
+    return hidden + gate * branch
+
+
 class _SpatialCrossAttention(nn.Module):
     """Attend from every query point to every context point in one frame."""
 
@@ -151,6 +155,8 @@ def configure(base_module):
             cond_seq_length_t: int,
             transformer_block: str,
             num_classes: int = 0,
+            object_cond_seq_length: int | None = None,
+            object_num_classes: int | None = None,
             cross_attention_heads: int = 4,
             cross_attention_spatial: bool = True,
             cross_attention_temporal: bool = True,
@@ -158,6 +164,8 @@ def configure(base_module):
             cross_attention_enabled: bool = True,
             backbone_mode: str = "separate",
             stop_gradient_object_context: bool = False,
+            joint_point_attention: bool = False,
+            independent_phase_forward: bool = False,
         ):
             super().__init__()
             if transformer_block != "SpatialTemporalTransformerBlock":
@@ -182,15 +190,29 @@ def configure(base_module):
                     f"backbone_mode must be separate or shared, got {backbone_mode!r}"
                 )
             self.backbone_mode = str(backbone_mode)
+            self.joint_point_attention = bool(joint_point_attention)
+            self.independent_phase_forward = bool(independent_phase_forward)
+            if self.independent_phase_forward and not self.joint_point_attention:
+                raise ValueError("Independent phase forwards require the unified shared model")
+            if self.joint_point_attention and (
+                backbone_mode != "shared" or cross_attention_enabled
+            ):
+                raise ValueError("Joint point attention requires one shared trunk and no CPI")
             self.cross_attention_enabled = bool(cross_attention_enabled)
             # In the one-way simulator, the object drives the gas, but the gas
             # objective must not update the object predictor through context.
             self.stop_gradient_object_context = bool(stop_gradient_object_context)
             self.gas_dit = base_transformer(**common)
+            object_common = {
+                **common,
+                "cond_seq_length": (cond_seq_length if object_cond_seq_length is None
+                                    else object_cond_seq_length),
+                "num_classes": num_classes if object_num_classes is None else object_num_classes,
+            }
             self.object_dit = (
                 self.gas_dit
                 if self.backbone_mode == "shared"
-                else base_transformer(**common)
+                else base_transformer(**object_common)
             )
             dim = int(num_attention_heads) * 64
             if dim != int(time_embed_dim):
@@ -210,6 +232,16 @@ def configure(base_module):
                 ]
             )
             self.gradient_checkpointing = False
+            if self.joint_point_attention:
+                joint_position = self.gas_dit._get_positional_embeddings(
+                    2 * sample_points, sample_frames
+                )
+                joint_position = torch.cat(
+                    [joint_position.new_zeros(1, 2 * cond_seq_length, dim),
+                     joint_position[:, cond_seq_length:]], dim=1
+                )
+                self.register_buffer("joint_position", joint_position, persistent=False)
+                self.phase_embedding = nn.Parameter(torch.zeros(2, dim))
 
         def enable_gradient_checkpointing(self) -> None:
             self.gradient_checkpointing = True
@@ -220,10 +252,161 @@ def configure(base_module):
             """Toggle cross-stream communication without changing parameters."""
             self.cross_attention_enabled = bool(enabled)
 
+        def _forward_joint(self, gas_hidden, object_hidden, gas_condition,
+                           object_condition, timesteps, phase_presence,
+                           gas_material, object_material):
+            batch, frames, points, _ = gas_hidden.shape
+            if phase_presence is None:
+                phase_presence = torch.ones(batch, 2, device=gas_hidden.device, dtype=torch.bool)
+            if not phase_presence.any(dim=1).all():
+                raise ValueError("Unified predictor requires at least one active phase")
+            if getattr(self, "pack_independent_phases", False):
+                return self._forward_independent_packed(
+                    gas_hidden, object_hidden, gas_condition, object_condition,
+                    timesteps, phase_presence, gas_material, object_material,
+                )
+            outputs = gas_hidden.new_zeros(batch, frames, 2, points, 3)
+            dit = self.gas_dit
+            # Exclude absent-phase tokens entirely from self-attention.
+            groups = ((True, False), (False, True)) if self.independent_phase_forward else (
+                (True, False), (False, True), (True, True)
+            )
+            for gas_on, solid_on in groups:
+                if self.independent_phase_forward:
+                    # Paired samples take two disjoint forwards through the same weights.
+                    select = phase_presence[:, 0 if gas_on else 1]
+                else:
+                    select = (phase_presence[:, 0] == gas_on) & (phase_presence[:, 1] == solid_on)
+                if not select.any():
+                    continue
+                hidden_parts, condition_parts, slots = [], [], []
+                for slot, present, hidden, condition in (
+                    (0, gas_on, gas_hidden, gas_condition),
+                    (1, solid_on, object_hidden, object_condition),
+                ):
+                    if present:
+                        slots.append(slot)
+                        embedding = self.phase_embedding[slot]
+                        hidden_parts.append(hidden[select] + embedding)
+                        condition_parts.append(condition[select] + embedding)
+                hidden = torch.cat(hidden_parts, dim=2)
+                condition = torch.cat(condition_parts, dim=1)
+                count, _, total_points, channels = hidden.shape
+                embedding = dit.time_embedding(
+                    dit.time_proj(timesteps[select]).to(hidden.dtype), None
+                )
+                if dit.class_embedder is not None:
+                    materials = (gas_material, object_material)
+                    modulation = [
+                        dit.class_embedder(materials[slot][select]) for slot in slots
+                    ]
+                    embedding = embedding + torch.stack(modulation).mean(dim=0)
+                position = self.joint_position if len(slots) == 2 else dit.pos_embedding
+                full = torch.cat([condition, hidden.flatten(1, 2)], dim=1)
+                full = dit.embedding_dropout(full + position.to(full.dtype))
+                condition_length = condition.shape[1]
+                condition = full[:, :condition_length]
+                hidden = full[:, condition_length:].reshape(count, frames, total_points, channels)
+                for layer_index, block in enumerate(dit.transformer_blocks):
+                    selected_layers = getattr(self, "checkpoint_layers", None)
+                    if len(slots) == 1:
+                        selected_layers = getattr(self, "single_phase_checkpoint_layers", selected_layers)
+                    if (torch.is_grad_enabled() and self.gradient_checkpointing
+                            and (selected_layers is None or layer_index in selected_layers)):
+                        def apply(h, c, e, current_block=block):
+                            return current_block(h, c, e, None)
+                        checkpoint_kwargs = {}
+                        context = getattr(self, "selective_checkpoint_context_fn", None)
+                        if context is not None and (
+                                len(slots) == 1 or not getattr(
+                                    self, "selective_checkpoint_single_phase_only", True)):
+                            checkpoint_kwargs["context_fn"] = context
+                        hidden, condition = torch.utils.checkpoint.checkpoint(
+                            apply, hidden, condition, embedding, use_reentrant=False,
+                            **checkpoint_kwargs,
+                        )
+                    else:
+                        hidden, condition = block(hidden, condition, embedding, None)
+                result = self._finish_branch(dit, hidden, embedding).reshape(
+                    count, frames, len(slots), points, 3
+                )
+                for index, slot in enumerate(slots):
+                    outputs[select, :, slot] = result[:, :, index]
+            return outputs[:, :, 0].flatten(1, 2), outputs[:, :, 1].flatten(1, 2)
+
+        def _forward_independent_packed(
+            self, gas_hidden, object_hidden, gas_condition, object_condition,
+            timesteps, phase_presence, gas_material, object_material,
+        ):
+            batch, frames, points, _ = gas_hidden.shape
+            dit = self.gas_dit
+            selections = [phase_presence[:, slot].nonzero(as_tuple=True)[0]
+                          for slot in (0, 1)]
+            hidden_parts, condition_parts, times, materials = [], [], [], []
+            for slot, (hidden, condition, material) in enumerate((
+                (gas_hidden, gas_condition, gas_material),
+                (object_hidden, object_condition, object_material),
+            )):
+                indices = selections[slot]
+                if not indices.numel():
+                    continue
+                hidden_parts.append(hidden[indices] + self.phase_embedding[slot])
+                condition_parts.append(condition[indices] + self.phase_embedding[slot])
+                times.append(timesteps[indices])
+                if dit.class_embedder is not None:
+                    materials.append(material[indices])
+            # Each row remains a separate 2048-point attention sample.
+            hidden = torch.cat(hidden_parts, dim=0)
+            condition = torch.cat(condition_parts, dim=0)
+            embedding = dit.time_embedding(
+                dit.time_proj(torch.cat(times)).to(hidden.dtype), None
+            )
+            if dit.class_embedder is not None:
+                embedding = embedding + dit.class_embedder(torch.cat(materials))
+            count, _, _, channels = hidden.shape
+            full = torch.cat([condition, hidden.flatten(1, 2)], dim=1)
+            full = dit.embedding_dropout(full + dit.pos_embedding.to(full.dtype))
+            length = condition.shape[1]
+            condition = full[:, :length]
+            hidden = full[:, length:].reshape(count, frames, points, channels)
+            layers = getattr(self, "single_phase_checkpoint_layers",
+                             getattr(self, "checkpoint_layers", None))
+            for index, block in enumerate(dit.transformer_blocks):
+                if (torch.is_grad_enabled() and self.gradient_checkpointing
+                        and (layers is None or index in layers)):
+                    def apply(h, c, e, current_block=block):
+                        return current_block(h, c, e, None)
+                    options = {}
+                    context = getattr(self, "selective_checkpoint_context_fn", None)
+                    if context is not None:
+                        options["context_fn"] = context
+                    hidden, condition = torch.utils.checkpoint.checkpoint(
+                        apply, hidden, condition, embedding, use_reentrant=False, **options
+                    )
+                else:
+                    hidden, condition = block(hidden, condition, embedding, None)
+            result = self._finish_branch(dit, hidden, embedding).reshape(
+                count, frames, points, 3
+            )
+            outputs = gas_hidden.new_zeros(batch, frames, 2, points, 3)
+            offset = 0
+            for slot, indices in enumerate(selections):
+                if not indices.numel():
+                    continue
+                end = offset + indices.numel()
+                outputs[indices, :, slot] = result[offset:end]
+                offset = end
+            return outputs[:, :, 0].flatten(1, 2), outputs[:, :, 1].flatten(1, 2)
+
         @staticmethod
-        def _prepare_branch(dit, hidden: torch.Tensor, condition: torch.Tensor, timesteps):
+        def _prepare_branch(dit, hidden: torch.Tensor, condition: torch.Tensor,
+                            timesteps, material=None):
             timestep_embedding = dit.time_proj(timesteps).to(dtype=hidden.dtype)
             timestep_embedding = dit.time_embedding(timestep_embedding, None)
+            if dit.class_embedder is not None:
+                if material is None:
+                    raise ValueError("Large conditioning requires material labels for AdaLN")
+                timestep_embedding = timestep_embedding + dit.class_embedder(material)
             batch, frames, points, channels = hidden.shape
             full_sequence = torch.cat(
                 [condition, hidden.reshape(batch, frames * points, channels)], dim=1
@@ -256,8 +439,8 @@ def configure(base_module):
                 encoder_hidden_states=norm_condition,
                 image_rotary_emb=None,
             )
-            hidden_flat = hidden_flat + gate_msa * attended_hidden
-            condition = condition + condition_gate_msa * attended_condition
+            hidden_flat = gated_residual(hidden_flat, gate_msa, attended_hidden)
+            condition = gated_residual(condition, condition_gate_msa, attended_condition)
             return hidden_flat.reshape(batch, frames, points, channels), condition, frame_timestep
 
         @staticmethod
@@ -270,8 +453,8 @@ def configure(base_module):
             )
             ff_input = torch.cat([norm_condition, norm_hidden], dim=1)
             ff_output = block.ff(ff_input)
-            hidden_flat = hidden_flat + gate_ff * ff_output[:, text_length:]
-            condition = condition + condition_gate_ff * ff_output[:, :text_length]
+            hidden_flat = gated_residual(hidden_flat, gate_ff, ff_output[:, text_length:])
+            condition = gated_residual(condition, condition_gate_ff, ff_output[:, :text_length])
             return hidden_flat.reshape(batch, frames, points, channels), condition
 
         @staticmethod
@@ -369,6 +552,21 @@ def configure(base_module):
                 return output, hidden
             return output
 
+        def forward_single_phase(self, branch, hidden, condition, timesteps, material):
+            dit = self.gas_dit if branch == "gas" else self.object_dit
+            hidden, condition, embedding = self._prepare_branch(
+                dit, hidden, condition, timesteps, material
+            )
+            for block in dit.transformer_blocks:
+                hidden, condition, frame_embedding = self._spatial_stage(
+                    block, hidden, condition, embedding
+                )
+                hidden, condition = self._feed_forward_stage(
+                    block, hidden, condition, frame_embedding
+                )
+                hidden = self._temporal_stage(block, hidden, embedding)
+            return self._finish_branch(dit, hidden, embedding)
+
         def forward(
             self,
             gas_hidden: torch.Tensor,
@@ -378,7 +576,16 @@ def configure(base_module):
             timesteps: torch.Tensor,
             return_gas_features: bool = False,
             phase_presence: torch.Tensor | None = None,
+            gas_material: torch.Tensor | None = None,
+            object_material: torch.Tensor | None = None,
         ):
+            if self.joint_point_attention:
+                if return_gas_features:
+                    raise ValueError("Unified baseline does not expose branch-specific features")
+                return self._forward_joint(
+                    gas_hidden, object_hidden, gas_condition, object_condition,
+                    timesteps, phase_presence, gas_material, object_material
+                )
             if phase_presence is not None:
                 if phase_presence.shape != (gas_hidden.shape[0], 2):
                     raise ValueError(
@@ -393,14 +600,16 @@ def configure(base_module):
                 interaction_enabled = None
 
             gas_hidden, gas_condition, gas_timestep = self._prepare_branch(
-                self.gas_dit, gas_hidden, gas_condition, timesteps
+                self.gas_dit, gas_hidden, gas_condition, timesteps, gas_material
             )
             object_hidden, object_condition, object_timestep = self._prepare_branch(
-                self.object_dit, object_hidden, object_condition, timesteps
+                self.object_dit, object_hidden, object_condition, timesteps, object_material
             )
 
             for layer_index in range(len(self.interactions)):
-                if torch.is_grad_enabled() and self.gradient_checkpointing:
+                selected_layers = getattr(self, "checkpoint_layers", None)
+                if (torch.is_grad_enabled() and self.gradient_checkpointing
+                        and (selected_layers is None or layer_index in selected_layers)):
                     def custom_forward(
                         gas_h, object_h, gas_c, object_c, current_layer=layer_index
                     ):
@@ -457,6 +666,7 @@ def configure(base_module):
             return gas_output, object_output
 
     globals()["PointEmbed"] = base_module.PointEmbed
+    globals()["MDM_ST"] = base_module.MDM_ST
     globals()["SpaitalTemporalTransformer"] = base_transformer
     globals()["DualStreamSpaitalTemporalTransformer"] = DualStreamSpaitalTemporalTransformer
     return globals()

@@ -7,6 +7,7 @@ import json
 import logging
 import re
 import sys
+import time
 from pathlib import Path
 
 import torch
@@ -16,9 +17,14 @@ from accelerate.utils import ProjectConfiguration, set_seed
 from diffusers import DDPMScheduler
 from diffusers.optimization import get_cosine_schedule_with_warmup
 from omegaconf import OmegaConf
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, default_collate
 
 from physics_losses import DeformLoss
+from exposure_plan import ExposurePlanDataset
+from performance_options import (
+    aggregate_nonfinite, configure_model_performance, configure_restored_optimizer,
+    loader_performance_kwargs,
+)
 
 
 ROOT = Path(__file__).resolve().parent
@@ -47,7 +53,11 @@ def configure_attention_backend(backend: str = "default"):
     torch.set_float32_matmul_precision("high")
 
 
-def nonfinite_gradients(model, limit: int = 8):
+def nonfinite_gradients(model, limit: int = 8, aggregate: bool = False):
+    if aggregate:
+        return aggregate_nonfinite(
+            ((n, p.grad) for n, p in model.named_parameters()), limit,
+            implementation=aggregate if isinstance(aggregate, str) else "elementwise")
     bad = []
     for name, parameter in model.named_parameters():
         if parameter.grad is not None and not torch.isfinite(parameter.grad).all():
@@ -57,7 +67,11 @@ def nonfinite_gradients(model, limit: int = 8):
     return bad
 
 
-def nonfinite_parameters(model, limit: int = 8):
+def nonfinite_parameters(model, limit: int = 8, aggregate: bool = False):
+    if aggregate:
+        return aggregate_nonfinite(
+            model.named_parameters(), limit,
+            implementation=aggregate if isinstance(aggregate, str) else "elementwise")
     bad = []
     for name, parameter in model.named_parameters():
         if not torch.isfinite(parameter).all():
@@ -74,6 +88,19 @@ def batch_files(meta):
     if isinstance(files, (list, tuple)):
         return [str(path) for path in files]
     return [str(files)]
+
+
+def collate_training_batch(items):
+    # object_* compatibility aliases occur only in interaction samples.
+    # The trainer consumes their canonical physics_* equivalents.
+    data, metadata = zip(*items)
+    tensors = [{key: value for key, value in item.items() if not key.startswith("object_")}
+               for item in data]
+    result = {"file": [item["file"] for item in metadata]}
+    for key in ("exposure_source", "exposure_position", "phase_slot", "exposure_valid"):
+        if key in metadata[0]:
+            result[key] = [item[key] for item in metadata]
+    return default_collate(tensors), result
 
 
 def any_rank_bad(accelerator, local_bad: bool, device: torch.device) -> bool:
@@ -115,7 +142,19 @@ def load_runtime(cfg):
     model_mod = load_module(
         model_root / "joint_model.py", "physctrl_joint_model"
     )
+    solid_mod = load_module(model_root / "solid_stage1.py", "physctrl_solid_stage1")
+    model_mod.SolidStage1 = solid_mod.SolidStage1
     return mdm_model, dataset_mod, model_mod
+
+
+def build_model(cfg, mdm_model, model_mod):
+    if bool(cfg.model_config.get("solid_stage1_only", False)):
+        return model_mod.SolidStage1(
+            int(cfg.pc_size), int(cfg.n_training_frames), cfg.model_config, mdm_model
+        )
+    return model_mod.JointMDM_ST(
+        int(cfg.pc_size), int(cfg.n_training_frames), cfg.model_config, mdm_model
+    )
 
 
 def diffusion_inputs(batch, scheduler):
@@ -404,30 +443,49 @@ def compute_velocity_transfer_loss(
     return _masked_mean(error, valid, pred)
 
 
-def compute_loss(model, batch, scheduler, cfg, deform_loss=None):
+def compute_loss(model, batch, scheduler, cfg, deform_loss=None, prediction=None):
     if bool(cfg.get("require_phase_presence", False)) and "phase_presence" not in batch:
         raise KeyError(
             "Combined Stage 2 training requires phase_presence in every batch"
         )
-    target, noisy, timesteps = diffusion_inputs(batch, scheduler)
-    model_output = model(
-        noisy,
-        timesteps,
-        batch["points_src"],
-        batch["init_vel"],
-        batch["force"],
-        batch["drag_point"],
-        batch["drag_mask"],
-        physics_E=batch.get("physics_E"),
-        physics_nu=batch.get("physics_nu"),
-        physics_mat_type=batch.get("physics_mat_type"),
-        physics_floor_height=batch.get("physics_floor_height"),
-        physics_gravity=batch.get("physics_gravity"),
-        physics_coeff=batch.get("physics_coeff"),
-        physics_volume=batch.get("physics_volume"),
-        phase_presence=batch.get("phase_presence"),
-    )
-    pred = model_output
+    if prediction is None:
+        target, noisy, timesteps = diffusion_inputs(batch, scheduler)
+        pred = model(
+            noisy,
+            timesteps,
+            batch["points_src"],
+            batch["init_vel"],
+            batch["force"],
+            batch["drag_point"],
+            batch["drag_mask"],
+            physics_E=batch.get("physics_E"),
+            physics_nu=batch.get("physics_nu"),
+            physics_mat_type=batch.get("physics_mat_type"),
+            physics_floor_height=batch.get("physics_floor_height"),
+            physics_gravity=batch.get("physics_gravity"),
+            physics_coeff=batch.get("physics_coeff"),
+            physics_volume=batch.get("physics_volume"),
+            phase_presence=batch.get("phase_presence"),
+        )
+    else:
+        target = torch.nan_to_num(batch["points_tgt"].float(), nan=0.0, posinf=0.0, neginf=0.0)
+        pred, noisy, timesteps = prediction, None, None
+    if bool(cfg.get("samplewise_loss_reduction", False)) and pred.shape[0] > 1:
+        # Match the reference's batch-1 phase weights and physical normalizers,
+        # while retaining one batched model forward/backward.
+        terms = [
+            compute_loss(
+                None, {key: value[i:i + 1] for key, value in batch.items()},
+                scheduler, cfg, deform_loss, prediction=pred[i:i + 1],
+            )
+            for i in range(pred.shape[0])
+        ]
+        loss = torch.stack([item[0] for item in terms]).mean()
+        metrics = {}
+        for key in terms[0][1]:
+            values = torch.stack([item[1][key] for item in terms])
+            metrics[key] = values.sum() if key in {"invalid_gas", "invalid_object"} else values.mean()
+        return loss, metrics
 
     pred_float = pred.float()
     target_float = torch.nan_to_num(target.float(), nan=0.0, posinf=0.0, neginf=0.0)
@@ -481,6 +539,8 @@ def compute_loss(model, batch, scheduler, cfg, deform_loss=None):
                 "Solid deformation loss requires dataset fields: " + ", ".join(missing)
             )
         solid_valid = valid[:, 1]
+        if bool(cfg.get("solid_stage1_mpm_only", False)):
+            solid_valid = solid_valid & (batch["physics_mat_type"][:, 1] != 3)
         if bool(solid_valid.any()):
             physical_deform_loss = deform_loss(
                 safe_pred[solid_valid, :, 1].clamp(
@@ -543,9 +603,15 @@ def compute_loss(model, batch, scheduler, cfg, deform_loss=None):
         + gas_weight * gas_physics * branch_present[0].to(gas_physics.dtype)
     ) / active_weight
     loss = trajectory_loss + lambda_coupling * coupling_loss
+    unweighted_loss = loss
+    if "phase_loss_weight" in batch:
+        if pred.shape[0] != 1:
+            raise ValueError("Phase sample weighting requires samplewise_loss_reduction=true")
+        loss = loss * batch["phase_loss_weight"].reshape(-1)[0]
 
     metrics = {
         "loss": loss.detach(),
+        "loss_unweighted": unweighted_loss.detach(),
         "xyz": (
             gas_weight * gas_xyz * branch_present[0].to(gas_loss.dtype)
             + object_weight * object_xyz * branch_present[1].to(object_loss.dtype)
@@ -601,7 +667,7 @@ def save_checkpoint(accelerator, output_dir: Path, step: int, limit: int):
         )
         import shutil
 
-        for old in checkpoints[max(0, limit - 1) :]:
+        for old in checkpoints[:max(0, len(checkpoints) - limit + 1)]:
             shutil.rmtree(old)
     accelerator.wait_for_everyone()
     accelerator.save_state(str(output_dir / f"checkpoint-{step}"))
@@ -699,7 +765,9 @@ def validate_experiment_config(cfg) -> None:
             raise ValueError(f"{name} must be non-negative")
     lambda_coupling = float(cfg.get("lambda_coupling", 0.0))
     if lambda_coupling > 0.0:
-        if not bool(cfg.model_config.get("dit_cross_attention", False)):
+        if not bool(cfg.model_config.get("dit_cross_attention", False)) and not bool(
+            cfg.get("allow_coupling_supervision_without_cpi", False)
+        ):
             raise ValueError(
                 "lambda_coupling requires solid-to-gas cross-attention"
             )
@@ -707,6 +775,11 @@ def validate_experiment_config(cfg) -> None:
             raise ValueError(
                 "trajectory-derived lambda_coupling requires coupling_head=false"
             )
+    if cfg.get("exposure_plan", {}).get("mode") == "split_phase":
+        if lambda_coupling != 0 or not bool(cfg.get("samplewise_loss_reduction", False)):
+            raise ValueError("Independent phase samples require zero coupling and samplewise losses")
+        if backbone_mode != "shared" or not cfg.model_config.get("independent_phase_forward"):
+            raise ValueError("Split PhysCtrl requires a shared, independently applied predictor")
 
 
 def main():
@@ -721,10 +794,13 @@ def main():
     args = parser.parse_args()
 
     cfg = OmegaConf.load(args.config)
+    cfg.run_config_path = str(Path(args.config).resolve())
     validate_experiment_config(cfg)
     validate_protocol_lock(cfg)
     configure_attention_backend(str(cfg.get("sdpa_backend", "default")))
     output_dir = Path(str(cfg.output_dir))
+    runtime_dir = Path(str(cfg.get("runtime_dir", output_dir)))
+    runtime_dir.mkdir(parents=True, exist_ok=True)
     log_dir = output_dir / "logs"
     accelerator = Accelerator(
         gradient_accumulation_steps=int(cfg.gradient_accumulation_steps),
@@ -739,37 +815,58 @@ def main():
         deform_loss = DeformLoss(
             num_points=int(cfg.pc_size),
             frame_dt=float(cfg.get("physics_frame_dt", 0.0417)),
+            flat_grid_storage=bool(cfg.get("flat_deform_grid", False)),
+            skip_unused_stencil_terms=bool(cfg.get("skip_unused_stencil_terms", False)),
         ).to(accelerator.device)
 
     mdm_model, dataset_mod, model_mod = load_runtime(cfg)
     train_ds = dataset_mod.ObjectGasDataset("train", cfg)
     val_ds = dataset_mod.ObjectGasDataset("val", cfg)
     test_ds = dataset_mod.ObjectGasDataset("test", cfg)
+    exposure_settings = cfg.get("exposure_plan")
+    if exposure_settings:
+        if file_sha256(Path(exposure_settings.path)) != exposure_settings.sha256:
+            raise ValueError("Exposure plan hash mismatch")
+        if exposure_settings.get("mode") == "split_phase":
+            from split_phase_exposure import SplitPhaseExposureDataset
+            train_ds = SplitPhaseExposureDataset(
+                train_ds, exposure_settings, output_dir, cfg.get("batch_transition")
+            )
+        else:
+            train_ds = ExposurePlanDataset(train_ds, exposure_settings, output_dir)
+        assert int(cfg.gradient_accumulation_steps) == 1
+        assert accelerator.num_processes == int(exposure_settings.world_size)
+        if cfg.get("batch_transition"):
+            assert len(train_ds) == train_ds.sample_cursor(int(cfg.max_train_steps))
+        else:
+            assert len(train_ds) == int(cfg.max_train_steps) * int(cfg.train_batch_size) * accelerator.num_processes
     train_loader = DataLoader(
         train_ds,
         batch_size=int(cfg.train_batch_size),
-        shuffle=True,
+        shuffle=not bool(exposure_settings),
         num_workers=int(cfg.num_workers),
         pin_memory=True,
+        collate_fn=collate_training_batch,
+        **loader_performance_kwargs(cfg),
     )
     val_loader = DataLoader(
         val_ds,
         batch_size=int(cfg.eval_batch_size),
         shuffle=False,
-        num_workers=int(cfg.num_workers),
+        num_workers=int(cfg.get("eval_num_workers", cfg.num_workers)),
         pin_memory=True,
+        collate_fn=collate_training_batch,
     )
     test_loader = DataLoader(
         test_ds,
         batch_size=int(cfg.eval_batch_size),
         shuffle=False,
-        num_workers=int(cfg.num_workers),
+        num_workers=int(cfg.get("eval_num_workers", cfg.num_workers)),
         pin_memory=True,
+        collate_fn=collate_training_batch,
     )
 
-    model = model_mod.JointMDM_ST(
-        int(cfg.pc_size), int(cfg.n_training_frames), cfg.model_config, mdm_model
-    )
+    model = build_model(cfg, mdm_model, model_mod)
     requested_resume = args.resume_from_checkpoint or cfg.get("resume_from_checkpoint")
     resume_path = resolve_resume_checkpoint(
         output_dir, str(requested_resume) if requested_resume else None
@@ -826,22 +923,31 @@ def main():
         sum(int(parameter.numel()) for parameter in model.parameters() if parameter.requires_grad),
     )
     optimizer = torch.optim.AdamW(
-        model.parameters(), lr=float(cfg.learning_rate), weight_decay=float(cfg.weight_decay)
+        model.parameters(), lr=float(cfg.learning_rate), weight_decay=float(cfg.weight_decay),
+        **({"fused": True} if bool(cfg.get("fused_adamw", False)) else {}),
     )
     max_steps = int(args.max_steps if args.max_steps is not None else cfg.max_train_steps)
-    scheduler = build_cosine_scheduler(
-        optimizer, cfg.lr_warmup_steps, max_steps,
-        accelerator.num_processes, accelerator.split_batches,
-    )
+    if cfg.get("batch_transition"):
+        from batch_transition import transition_scheduler
+        scheduler = transition_scheduler(
+            optimizer, cfg, accelerator.num_processes, accelerator.split_batches
+        )
+    else:
+        scheduler = build_cosine_scheduler(
+            optimizer, cfg.lr_warmup_steps, max_steps,
+            accelerator.num_processes, accelerator.split_batches,
+        )
     contract = {
         "version": "stage2_complete_phase_objectives_v4_20260922",
         "phase_objective_reduction": "weighted_complete_objectives_active_branches",
+        "samplewise_loss_reduction": bool(cfg.get("samplewise_loss_reduction", False)),
         "solid_gravity": "stage1_material_center_full_mask_zero_drag_coefficient",
         "scheduler": "cosine_world_scaled",
         "world_size": accelerator.num_processes,
         "split_batches": accelerator.split_batches,
         "warmup_optimizer_steps": int(cfg.lr_warmup_steps),
         "max_optimizer_steps": max_steps,
+        "conditioning": OmegaConf.to_container(cfg.model_config, resolve=True),
         "loss_weights": {
             "lambda_xyz": float(cfg.get("lambda_xyz", 1.0)),
             "lambda_vel": float(cfg.get("lambda_vel", 1.0)),
@@ -855,31 +961,79 @@ def main():
         },
     }
     contract_path = output_dir / "training_contract.json"
+    if exposure_settings:
+        contract["exposure_plan"] = OmegaConf.to_container(exposure_settings, resolve=True)
+        contract["initialization"] = str(cfg.get("initialization", {}).get("mode", "pretrained"))
+    if cfg.get("validation_accuracy"):
+        contract["validation_accuracy"] = OmegaConf.to_container(cfg.validation_accuracy, resolve=True)
+    if cfg.get("batch_transition"):
+        contract["batch_transition"] = OmegaConf.to_container(cfg.batch_transition, resolve=True)
     if resume_path is not None:
         previous_contract_path = Path(resume_path).parent / "training_contract.json"
-        if not previous_contract_path.is_file() or json.loads(
-            previous_contract_path.read_text(encoding="utf-8")
-        ) != contract:
-            raise ValueError(
-                "Checkpoint training contract differs or is missing. Do not resume "
-                "a legacy gravity/scheduler checkpoint as a corrected run. Use a new "
-                "run initialized from Stage 1, or its frozen legacy trainer."
-            )
+        if not previous_contract_path.is_file():
+            raise ValueError("Checkpoint training contract is missing")
+        from batch_transition import validate_resume_contract
+        validate_resume_contract(
+            json.loads(previous_contract_path.read_text(encoding="utf-8")),
+            contract, cfg, resume_path,
+        )
     if accelerator.is_main_process:
         output_dir.mkdir(parents=True, exist_ok=True)
         contract_path.write_text(json.dumps(contract, indent=2) + "\n", encoding="utf-8")
         logger.info("TRAINING_CONTRACT %s", contract)
     if bool(cfg.get("gradient_checkpointing", True)) and hasattr(model, "enable_gradient_checkpointing"):
         model.enable_gradient_checkpointing()
+    configure_model_performance(model, cfg)
+    fusion = getattr(model, "_operator_fusion_report", None)
+    if fusion is not None:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / f"native_operator_rank{accelerator.process_index}.json").write_text(
+            json.dumps(fusion, indent=2), encoding="utf-8"
+        )
 
     model, optimizer, train_loader, val_loader, test_loader, scheduler = accelerator.prepare(
         model, optimizer, train_loader, val_loader, test_loader, scheduler
     )
     global_step = 0
+    if resume_path is not None and not exposure_settings and cfg.get("resume_sampler_initial_sha256"):
+        generator = train_loader.synchronized_generator
+        actual = hashlib.sha256(generator.get_state().numpy().tobytes()).hexdigest()
+        if actual != str(cfg.resume_sampler_initial_sha256):
+            raise ValueError("Initial shuffled sampler does not match the audited original run")
     if resume_path is not None:
         accelerator.load_state(str(resume_path))
+        configure_restored_optimizer(optimizer, cfg)
         global_step = checkpoint_step(resume_path)
         logger.info("RESUMED checkpoint=%s step=%d", resume_path, global_step)
+        if cfg.get("batch_transition"):
+            logger.info("BATCH_TRANSITION samples=%d optimizer_steps=%d lr=%s",
+                        train_ds.sample_cursor(global_step), global_step,
+                        scheduler.get_last_lr())
+    exposure_counts = [0, 0, 0]
+    phase_exposure_counts = [0, 0]
+    if exposure_settings and global_step:
+        exposure_counts = train_ds.expected_counts(
+            global_step, accelerator.num_processes, int(cfg.train_batch_size),
+            accelerator.process_index,
+        )
+        skipped = (train_ds.sample_cursor(global_step) //
+                   int(exposure_settings.global_batch)
+                   if cfg.get("batch_transition") else global_step)
+        train_loader = accelerator.skip_first_batches(train_loader, skipped)
+        if hasattr(train_ds, "expected_phase_counts"):
+            phase_exposure_counts = train_ds.expected_phase_counts(
+                global_step, accelerator.num_processes, int(cfg.train_batch_size),
+                accelerator.process_index,
+            )
+    elif global_step and cfg.get("resume_sampler_initial_sha256"):
+        microbatches = global_step * int(cfg.gradient_accumulation_steps)
+        if microbatches >= len(train_loader):
+            raise ValueError("Audited shuffled replay is restricted to the first epoch")
+        train_loader = accelerator.skip_first_batches(train_loader, microbatches)
+        logger.info("AUDITED_SAMPLER_RESUME microbatches=%d", microbatches)
+    finish_step = int(cfg.get("diagnostic_stop_step", max_steps))
+    if not global_step < finish_step <= max_steps:
+        raise ValueError("diagnostic_stop_step must be after resume and within the training horizon")
     total_batch = int(cfg.train_batch_size) * accelerator.num_processes * int(cfg.gradient_accumulation_steps)
     logger.info(
         "train=%d val=%d test=%d world=%d effective_batch=%d steps=%d simultaneous_streams=true",
@@ -895,7 +1049,8 @@ def main():
         cfg.model_config.get("dit_cross_attention_direction", "object_to_gas"),
         cfg.model_config.get("dit_cross_attention_spatial", "-"),
         cfg.model_config.get("dit_cross_attention_temporal", "-"),
-        4,
+        (cfg.model_config.get("gas_conditioning", "legacy"),
+         cfg.model_config.get("object_conditioning", "legacy")),
         cfg.model_config.get("n_layers", "-"),
         cfg.model_config.get("dit_cross_attention_heads", "-"),
     )
@@ -903,7 +1058,8 @@ def main():
         "physics_condition=%s physics_tokens=%s physics_num_materials=%s "
         "embedded_object_metadata_required=%s",
         bool(cfg.model_config.get("physics_condition", False)),
-        4,
+        (cfg.model_config.get("gas_conditioning", "legacy"),
+         cfg.model_config.get("object_conditioning", "legacy")),
         cfg.model_config.get("physics_num_materials", 5),
         str(cfg.get("object_physics_mode", "off")),
     )
@@ -920,15 +1076,34 @@ def main():
     )
 
     noise_scheduler = DDPMScheduler(num_train_timesteps=1000, prediction_type="sample", clip_sample=False)
+    profile_runtime = bool(cfg.get("profile_runtime", False))
+    runtime_start = runtime_previous = time.monotonic()
+    runtime_previous_step = global_step
+    if profile_runtime:
+        torch.cuda.reset_peak_memory_stats(accelerator.device)
     bad_accumulation = False
-    while global_step < max_steps:
+    while global_step < finish_step:
         for batch, batch_meta in train_loader:
+            if exposure_settings:
+                cursor = (train_ds.sample_cursor(global_step)
+                          if cfg.get("batch_transition") else global_step * total_batch)
+                first_position = cursor + accelerator.process_index * int(cfg.train_batch_size)
+                expected_positions = list(range(first_position, first_position + int(cfg.train_batch_size)))
+                if list(batch_meta["exposure_position"]) != expected_positions:
+                    raise ValueError("Frozen exposure cursor differs from the optimizer update")
             with accelerator.accumulate(model):
                 metrics = None
                 if not bad_accumulation:
+                    if exposure_settings and not bool(batch["sample_valid"].all().item()):
+                        raise FloatingPointError("Exposure plan delivered an invalid sample")
                     loss, metrics = compute_loss(
                         model, batch, noise_scheduler, cfg, deform_loss
                     )
+                    if exposure_settings and (
+                        not bool(torch.isfinite(loss).item())
+                        or metrics["invalid_gas"].item() or metrics["invalid_object"].item()
+                    ):
+                        raise FloatingPointError("Non-finite prediction/loss; exposure update not counted")
                     if metrics["invalid_gas"].item() or metrics["invalid_object"].item():
                         logger.warning(
                             "non-finite prediction step=%d rank=%s files=%s invalid_gas=%d invalid_object=%d",
@@ -944,8 +1119,12 @@ def main():
                             global_step, accelerator.process_index, batch_files(batch_meta),
                         )
                     accelerator.backward(loss)
-                    bad_grads = nonfinite_gradients(model)
+                    bad_grads = nonfinite_gradients(
+                        model, aggregate=cfg.get("aggregate_finite_checks", False)
+                    )
                     if any_rank_bad(accelerator, bool(bad_grads), batch["points_src"].device):
+                        if exposure_settings:
+                            raise FloatingPointError("Non-finite gradients; refusing to skip exposure")
                         bad_accumulation = True
                         if bad_grads:
                             logger.warning(
@@ -968,7 +1147,9 @@ def main():
                         optimizer.step()
                         scheduler.step()
                         optimizer.zero_grad(set_to_none=True)
-                        bad_params = nonfinite_parameters(model)
+                        bad_params = nonfinite_parameters(
+                            model, aggregate=cfg.get("aggregate_finite_checks", False)
+                        )
                         if bad_params:
                             raise FloatingPointError(
                                 f"non-finite parameters after step {global_step}: {bad_params}"
@@ -977,6 +1158,59 @@ def main():
 
             if accelerator.sync_gradients:
                 global_step += 1
+                if exposure_settings:
+                    for source in batch_meta["exposure_source"]:
+                        if int(source) >= 0:
+                            exposure_counts[int(source)] += 1
+                    if "phase_slot" in batch_meta:
+                        for slot, real in zip(batch_meta["phase_slot"], batch_meta["exposure_valid"]):
+                            if real:
+                                phase_exposure_counts[int(slot)] += 1
+                if profile_runtime and (
+                    global_step % int(cfg.logging_steps) == 0 or global_step == max_steps
+                ):
+                    now = time.monotonic()
+                    runtime = {
+                        "step": global_step, "rank": accelerator.process_index,
+                        "world_size": accelerator.num_processes,
+                        "batch_per_gpu": int(cfg.train_batch_size),
+                        "gradient_accumulation_steps": int(cfg.gradient_accumulation_steps),
+                        "global_batch": total_batch,
+                        "elapsed_seconds": now - runtime_start,
+                        "window_seconds_per_update":
+                            (now - runtime_previous) / (global_step - runtime_previous_step),
+                        "peak_allocated_bytes": torch.cuda.max_memory_allocated(accelerator.device),
+                        "peak_reserved_bytes": torch.cuda.max_memory_reserved(accelerator.device),
+                    }
+                    if exposure_settings:
+                        runtime["sample_cursor"] = (
+                            train_ds.sample_cursor(global_step)
+                            if cfg.get("batch_transition") else global_step * total_batch
+                        )
+                        runtime["learning_rate"] = scheduler.get_last_lr()
+                        expected = train_ds.expected_counts(
+                            global_step, accelerator.num_processes, int(cfg.train_batch_size),
+                            accelerator.process_index,
+                        )
+                        assert exposure_counts == expected, (exposure_counts, expected)
+                        runtime["source_exposure_counts"] = exposure_counts.copy()
+                        runtime["exposure_plan_sha256"] = exposure_settings.sha256
+                        if hasattr(train_ds, "expected_phase_counts"):
+                            assert phase_exposure_counts == train_ds.expected_phase_counts(
+                                global_step, accelerator.num_processes, int(cfg.train_batch_size),
+                                accelerator.process_index,
+                            )
+                            runtime["phase_exposure_counts_gas_solid"] = phase_exposure_counts.copy()
+                    if metrics is not None:
+                        runtime["loss"] = float(metrics["loss"].item())
+                        runtime["loss_unweighted"] = float(metrics["loss_unweighted"].item())
+                    runtime_path = runtime_dir / f"runtime_rank{accelerator.process_index}.json"
+                    temporary = runtime_path.with_suffix(".tmp")
+                    temporary.write_text(json.dumps(runtime, indent=2), encoding="utf-8")
+                    temporary.replace(runtime_path)
+                    with runtime_path.with_suffix(".jsonl").open("a", encoding="utf-8") as handle:
+                        handle.write(json.dumps(runtime) + "\n")
+                    runtime_previous, runtime_previous_step = now, global_step
                 if metrics is not None and accelerator.is_main_process and global_step % int(cfg.logging_steps) == 0:
                     logger.info(
                         "step=%d loss=%.8g xyz_gas=%.8g xyz_object=%.8g "
@@ -994,7 +1228,23 @@ def main():
                         metrics["loss_gas_advection"].item(),
                         metrics["loss_coupling"].item(),
                     )
-                if global_step % int(cfg.eval_steps) == 0:
+                eval_due = global_step % int(cfg.eval_steps) == 0
+                if cfg.get("batch_transition"):
+                    eval_due = train_ds.sample_cursor(global_step) % (
+                        int(cfg.eval_steps) * int(cfg.batch_transition.global_batch)
+                    ) == 0
+                if cfg.get("validation_accuracy") and (
+                    eval_due
+                    or global_step == int(cfg.validation_accuracy.get("first_step", -1))
+                    or global_step == finish_step
+                ):
+                    from validation_accuracy import validate_accuracy
+                    summary = validate_accuracy(
+                        model, val_ds, cfg, accelerator, global_step, output_dir
+                    )
+                    if accelerator.is_main_process:
+                        logger.info("FULL_VAL_ACCURACY step=%d %s", global_step, summary)
+                elif not cfg.get("validation_accuracy") and global_step % int(cfg.eval_steps) == 0:
                     val_logs = evaluate(
                         model, val_loader, noise_scheduler, cfg, accelerator, deform_loss
                     )
@@ -1014,14 +1264,46 @@ def main():
                         global_step,
                         int(cfg.checkpoints_total_limit),
                     )
-                if global_step >= max_steps:
+                if global_step >= finish_step:
                     break
-        if global_step >= max_steps:
+        if global_step >= finish_step:
             break
 
     accelerator.wait_for_everyone()
+    if global_step % int(cfg.checkpointing_steps):
+        save_checkpoint(accelerator, output_dir, global_step, int(cfg.checkpoints_total_limit))
+    accelerator.wait_for_everyone()
+    if exposure_settings:
+        actual = accelerator.reduce(
+            torch.tensor(exposure_counts, device=accelerator.device, dtype=torch.long),
+            reduction="sum",
+        ).cpu().tolist()
+        expected = (list(exposure_settings.expected_counts) if finish_step == max_steps else
+                    [sum(train_ds.expected_counts(global_step, accelerator.num_processes,
+                                                  int(cfg.train_batch_size), rank)[source]
+                         for rank in range(accelerator.num_processes)) for source in range(3)])
+        assert actual == expected, actual
+        phase_actual = None
+        if hasattr(train_ds, "expected_phase_counts"):
+            phase_actual = accelerator.reduce(
+                torch.tensor(phase_exposure_counts, device=accelerator.device, dtype=torch.long),
+                reduction="sum",
+            ).cpu().tolist()
+            if finish_step == max_steps:
+                assert phase_actual == list(exposure_settings.expected_phase_counts), phase_actual
+        if accelerator.is_main_process:
+            (output_dir / "exposure_final.json").write_text(json.dumps({
+                "state": "verified", "global_step": global_step, "actual_counts": actual,
+                "expected_counts": expected,
+                "phase_counts_gas_solid": phase_actual,
+                "scope": "full_training" if finish_step == max_steps else "diagnostic_prefix",
+                "plan_sha256": exposure_settings.sha256,
+                "definition": "valid samples in successful optimizer updates; rejected reads excluded",
+            }, indent=2))
     if accelerator.is_main_process:
-        logger.info("TRAINING_COMPLETE step=%d", global_step)
+        logger.info("%s step=%d",
+                    "TRAINING_COMPLETE" if finish_step == max_steps else "DIAGNOSTIC_COMPLETE",
+                    global_step)
     accelerator.end_training()
 
 

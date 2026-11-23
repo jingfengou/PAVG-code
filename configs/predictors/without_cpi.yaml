@@ -1,0 +1,123 @@
+run_label: without_cpi
+protocol_variant: phase_trajectory
+seed: 20260820
+mdm_root: src
+dataset_root: datasets
+train_list: manifests/prepared/stage2_catalog.json
+val_list: manifests/combined_val_paths.json
+test_list: manifests/combined_test_paths.json
+protocol_lock_path: null
+object_metadata_sidecar: metadata/composite_object_physics_full.h5
+require_phase_presence: true
+output_dir: runs/without_cpi
+initialization:
+  mode: pretrained
+  solid_checkpoint: runs/solid_prior/checkpoint-60000/model.safetensors
+  gas_checkpoint: runs/stage1_gas/checkpoint-60000/model.safetensors
+train_batch_size: 16
+eval_batch_size: 1
+gradient_accumulation_steps: 1
+max_train_steps: 15000
+learning_rate: 0.0001
+lr_warmup_steps: 25
+weight_decay: 0.01
+max_grad_norm: 1.0
+mixed_precision: bf16
+gradient_checkpointing: true
+num_workers: 2
+prefetch_factor: 2
+checkpointing_steps: 625
+checkpoints_total_limit: 8
+eval_steps: 125
+eval_max_batches: 8
+logging_steps: 10
+pc_size: 2048
+n_training_frames: 24
+n_frames_interval: 2
+physics_frame_dt: 0.0417
+deform_prediction_clip: 2.2
+norm_fac: 5.0
+context_dim: 32
+lambda_xyz: 1.0
+lambda_vel: 1.0
+lambda_deform: 0.001
+lambda_floor: 1.0
+lambda_gas_divergence: 0.05
+lambda_transfer: 0.0
+lambda_gas_advection: 0.0
+lambda_coupling: 0.05
+coupling_min_magnitude: 1.0e-05
+coupling_target_scale: 0.0
+coupling_scale_min: 0.0001
+coupling_huber_beta: 1.0
+gas_advection_scale_min: 0.0001
+gas_divergence_max_centers: 256
+gas_divergence_num_neighbors: 8
+gas_divergence_regularization: 0.001
+gas_divergence_scale_min: 1.0
+gas_divergence_residual_clip: 20.0
+gas_divergence_huber_beta: 1.0
+gas_weight: 1.0
+object_weight: 1.0
+model_config:
+  n_layers: 8
+  latent_dim: 256
+  frame_cond: true
+  pred_offset: true
+  transformer_block: SpatialTemporalTransformerBlock
+  context_dim: 32
+  physics_condition: true
+  physics_num_materials: 5
+  backbone_mode: separate
+  dit_cross_attention: false
+  dit_cross_attention_direction: object_to_gas
+  dit_cross_attention_spatial: true
+  dit_cross_attention_temporal: true
+  dit_cross_attention_heads: 4
+  coupling_head: false
+  stop_gradient_object_context: false
+  solid_stage1_only: false
+  gas_conditioning: legacy
+  object_conditioning: large
+  joint_point_attention: false
+composite_protocol: physctrl_composite_v2_canonical
+position_scale: 1.0
+velocity_scale: 1.0
+gas_force_scale: 1.0
+legacy_position_scale: 10.0
+legacy_velocity_scale: 10.0
+legacy_gas_force_scale: 0.1
+object_force_scale: 1.0
+gravity_override: 0
+object_physics_mode: required
+object_metadata_root: ''
+object_E_is_log10: false
+max_num_forces: 1
+aoss_enabled: false
+aoss_config_path: ''
+aoss_cache_dir: cache/trajectory
+aoss_cache_max_bytes: 53687091200
+aoss_cache_max_files: 32
+aoss_cache_batches: 0
+aoss_cache_batch_size: 1
+allow_coupling_supervision_without_cpi: true
+flat_deform_grid: true
+samplewise_loss_reduction: true
+eval_num_workers: 0
+skip_unused_stencil_terms: true
+exposure_plan:
+  path: manifests/prepared/stage2_plan.npy
+  sha256: e7cc5f4ccc6d0bcfe445e4acca5066977063d18b344f20e6b2119322795dd3b0
+  expected_counts:
+  - 0
+  - 0
+  - 1920000
+  source_names:
+  - solid_stage1
+  - gas_stage1
+  - stage2
+  source_sizes:
+  - 707678
+  world_size: 8
+  replacement_seed: 20260924
+  ordering_seed: 20261109
